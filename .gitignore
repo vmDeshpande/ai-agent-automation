@@ -1,0 +1,86 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+.pnp/
+.pnp.js
+
+# =========================
+# Environment & Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Runtime / Generated Data
+# =========================
+runtime/
+uploads/
+downloads/
+tmp/
+temp/
+data/
+cache/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# =========================
+# Build Output
+# =========================
+.next/
+out/
+dist/
+build/
+backend/.env
+backend/mock/
+runtime/
+uploads/
+*.pdf
+*.png
+*.glb
+
+# =========================
+# PM2 / Process Managers
+# =========================
+ecosystem.config.js
+pm2.config.js
+.pm2/
+
+# =========================
+# OS / Editor Files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# =========================
+# Cloud / Infra
+# =========================
+*.pem
+*.key
+*.crt
+*.pub
+cloudflared/
+terraform/
+infra/secrets/
+
+# =========================
+# Databases
+# =========================
+*.sqlite
+*.db
+
+# =========================
+# Test Artifacts
+# =========================
+coverage/
