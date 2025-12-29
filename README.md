@@ -2,7 +2,7 @@
 
 **AI Agent Automation Platform** is a backend-first, production-oriented system for building, executing, and scheduling intelligent workflows powered by autonomous AI agents.
 
-This project is designed as a *real execution engine*, not a demo or prompt playground. Agents run deterministic workflows, invoke tools, generate logs, persist state, and can be scheduled or triggered automatically.
+This project is designed as a *real execution engine*, not a demo or prompt playground. Agents run deterministic workflows, invoke tools, generate logs, persist state, and can be scheduled or triggered automatically.[Run Locally](https://github.com/vmDeshpande/ai-agent-automation#-local-development)
 
 ---
 
