@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Workflow, ListChecks, Bot, ScrollText } from "lucide-react"
+import { LayoutDashboard, Workflow, ListChecks, Bot, ScrollText, Clock1, Clock10, Clock10Icon, Clock12 } from "lucide-react"
 import { UserProfileMenu } from "@/components/user-profile-menu";
 import { cn } from "@/lib/utils"
 
@@ -16,6 +16,11 @@ const navItems = [
     name: "Workflows",
     href: "/workflows",
     icon: Workflow,
+  },
+  {
+    name: "Schedules",
+    href: "/schedules",
+    icon: Clock12,
   },
   {
     name: "Tasks",

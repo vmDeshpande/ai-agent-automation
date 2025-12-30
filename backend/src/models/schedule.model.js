@@ -7,6 +7,7 @@ const ScheduleSchema = new mongoose.Schema({
 
   // The workflow to run
   workflowId: { type: mongoose.Schema.Types.ObjectId, ref: "Workflow", required: true },
+  workflowName: { type: String, ref: "Workflow", required: true },
 
   // Cron expression (e.g. "0 8 * * *" daily at 8:00)
   cron: { type: String, required: true },

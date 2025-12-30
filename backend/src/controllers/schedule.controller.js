@@ -20,12 +20,19 @@ async function createSchedule(req, res) {
     // verify workflow exists and belongs to user
     const wf = await Workflow.findById(workflowId);
     if (!wf) return sendErr(res, 404, "workflow_not_found");
+
+    const steps = wf.metadata?.steps;
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return sendErr(res, 400, "workflow_has_no_steps");
+    }
+
     if (wf.userId.toString() !== userId.toString()) return sendErr(res, 403, "forbidden");
 
     const schedule = await Schedule.create({
       name,
       userId,
       workflowId,
+      workflowName : wf.name,
       cron,
       timezone: timezone || "UTC",
       taskInput: taskInput || {},
@@ -72,7 +79,7 @@ async function updateSchedule(req, res) {
     if (!schedule) return sendErr(res, 404, "not_found");
     if (schedule.userId.toString() !== req.user._id.toString()) return sendErr(res, 403, "forbidden");
 
-    const updatable = ["name","cron","timezone","taskInput","taskMetadata","enabled","workflowId"];
+    const updatable = ["name", "cron", "timezone", "taskInput", "taskMetadata", "enabled", "workflowId"];
     for (const k of updatable) {
       if (req.body[k] !== undefined) schedule[k] = req.body[k];
     }

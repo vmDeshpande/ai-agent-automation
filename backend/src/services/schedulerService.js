@@ -12,42 +12,64 @@ const jobs = new Map();
  */
 async function createTaskForSchedule(schedule) {
   try {
-    // load workflow to get workflow.metadata.steps (if any)
     const workflow = await Workflow.findById(schedule.workflowId);
     if (!workflow) {
       console.warn("Scheduled workflow not found:", schedule._id);
       return;
     }
 
+    const steps = workflow.metadata?.steps;
+
+    if (!Array.isArray(steps) || steps.length === 0) {
+      console.warn(
+        "Scheduled workflow has no steps:",
+        workflow._id.toString()
+      );
+      return;
+    }
+
     const task = await Task.create({
       name: `Scheduled Run - ${workflow.name}`,
       workflowId: workflow._id,
+      workflowName: workflow.name,
       agentId: workflow.agentId || null,
       userId: schedule.userId,
+
+      // ✅ THIS IS THE FIX
+      steps: workflow.metadata?.steps || [],
+      currentStep: 0,
+
       input: schedule.taskInput || {},
       metadata: {
         ...(schedule.taskMetadata || {}),
         scheduledBy: schedule._id.toString(),
-        runningBy: null
+        trigger: "schedule"
       },
+
       status: "pending"
     });
 
-    // push into workflow.tasks to be visible in UI
+
     workflow.tasks = workflow.tasks || [];
-    workflow.tasks.push(task._id); // add at front so newest appears first
+    workflow.tasks.push(task._id);
     await workflow.save();
 
-    // update schedule lastRunAt
     schedule.lastRunAt = new Date();
     await schedule.save();
 
-    console.log("Scheduler: created task", task._id.toString(), "for schedule", schedule._id.toString());
+    console.log(
+      "Scheduler: created task",
+      task._id.toString(),
+      "for schedule",
+      schedule._id.toString()
+    );
+
     return task;
   } catch (err) {
     console.error("createTaskForSchedule error:", err);
   }
 }
+
 
 /**
  * Schedule a single job in memory
@@ -152,7 +174,7 @@ async function start() {
  */
 function stop() {
   for (const [k, job] of jobs.entries()) {
-    try { job.stop(); } catch {}
+    try { job.stop(); } catch { }
   }
   jobs.clear();
 }

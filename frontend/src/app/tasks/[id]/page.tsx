@@ -57,11 +57,17 @@ type Task = {
   workflowId?: string;
   agentId?: string;
   createdAt: string;
+
+  // ✅ ADD THIS
+  steps?: TaskMetadataStep[];
+
   metadata?: {
-    steps?: TaskMetadataStep[];
+    steps?: TaskMetadataStep[]; // optional legacy / fallback
   };
+
   stepResults?: StepResult[];
 };
+
 
 type AgentMemoryItem = {
   type: "learned" | "system" | "interaction";
@@ -171,187 +177,187 @@ export default function TaskDetailPage() {
   const stepResults = task.stepResults ?? [];
   return (
     <AuthGuard>
-    <div className="flex min-h-screen">
-      <AppSidebar />
-      <main className="flex-1 pl-64">
-        <div className="p-8">
-          <div className="mb-8">
-            <div className="flex items-center gap-3">
-              <h1 className="font-mono text-2xl font-bold">{task.name}</h1>
-              <Badge
-                className={
-                  task.status === "completed"
-                    ? "bg-success/20 text-success border-success/30"
-                    : "bg-muted text-muted-foreground"
-                }
-              >
-                {task.status}
-              </Badge>
-            </div>
-            <p className="mt-2 text-muted-foreground">Workflow id: {task.workflowId}</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <Card className="p-6">
-                <h2 className="mb-6 text-xl font-semibold">
-                  Execution Timeline ({executedSteps}/{totalSteps})
-                </h2>
-
-                <div className="space-y-4">
-                  {stepResults.map((step: StepResult, index: number) => {
-                    const outputText =
-                      typeof step.output === "string"
-                        ? step.output
-                        : JSON.stringify(step.output, null, 2);
-                    const stepMetadata = task.metadata?.steps?.find(
-                      (s) => s.stepId === step.stepId
-                    );
-                    return (
-                      <div key={index} className="relative">
-                        {index < stepResults.length - 1 && (
-                          <div className="absolute left-2.5 top-10 h-[calc(100%+1rem)] w-0.5 bg-border" />
-                        )}
-                        <Collapsible>
-                          <div className="flex items-start gap-4">
-                            {getStepIcon(
-                              step.success === true
-                                ? "completed"
-                                : step.success === false
-                                  ? "failed"
-                                  : "running"
-                            )}
-
-                            <div className="flex-1">
-                              <CollapsibleTrigger className="group flex w-full items-start justify-between text-left">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3">
-                                    <h3 className="font-semibold">{stepMetadata?.name || step.stepId}</h3>
-                                    <Badge variant="outline" className="text-xs">
-                                      {step.type}
-                                    </Badge>
-                                  </div>
-
-                                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Clock className="size-3" />
-                                    {new Date(step.timestamp).toLocaleString()}
-                                  </div>
-                                </div>
-                                <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                              </CollapsibleTrigger>
-                              <CollapsibleContent className="mt-3">
-                                <Card className="bg-muted/30 p-4">
-                                  <p className="mb-2 text-sm font-medium">Output:</p>
-                                  {step.output && (
-                                    <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-background p-3 font-mono text-xs text-foreground">
-                                      {renderStepOutput(step.output)}
-                                    </pre>
-                                  )}
-                                </Card>
-                              </CollapsibleContent>
-                            </div>
-                          </div>
-                        </Collapsible>
-                      </div>
-                    );
-                  })}
-
-                  {executedSteps === 0 && (
-                    <p className="opacity-60">No steps executed yet.</p>
-                  )}
-                </div>
-              </Card>
-
+      <div className="flex min-h-screen">
+        <AppSidebar />
+        <main className="flex-1 pl-64">
+          <div className="p-8">
+            <div className="mb-8">
+              <div className="flex items-center gap-3">
+                <h1 className="font-mono text-2xl font-bold">{task.name}</h1>
+                <Badge
+                  className={
+                    task.status === "completed"
+                      ? "bg-success/20 text-success border-success/30"
+                      : "bg-muted text-muted-foreground"
+                  }
+                >
+                  {task.status}
+                </Badge>
+              </div>
+              <p className="mt-2 text-muted-foreground">Workflow id: {task.workflowId}</p>
             </div>
 
-            <div className="space-y-6">
-              {agent && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
                 <Card className="p-6">
-                  <h2 className="mb-4 text-lg font-semibold">Agent Inspector</h2>
+                  <h2 className="mb-6 text-xl font-semibold">
+                    Execution Timeline ({executedSteps}/{totalSteps})
+                  </h2>
 
                   <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <Bot className="size-5 text-primary" />
-                      <div>
-                        <p className="text-sm font-medium">{agent.name}</p>
-                        <p className="text-xs text-muted-foreground">{agent.type}</p>
-                      </div>
-                    </div>
+                    {stepResults.map((step: StepResult, index: number) => {
+                      const outputText =
+                        typeof step.output === "string"
+                          ? step.output
+                          : JSON.stringify(step.output, null, 2);
+                      const stepMetadata = task.steps?.find(
+                        (s) => s.stepId === step.stepId
+                      );
+                      return (
+                        <div key={index} className="relative">
+                          {index < stepResults.length - 1 && (
+                            <div className="absolute left-2.5 top-10 h-[calc(100%+1rem)] w-0.5 bg-border" />
+                          )}
+                          <Collapsible>
+                            <div className="flex items-start gap-4">
+                              {getStepIcon(
+                                step.success === true
+                                  ? "completed"
+                                  : step.success === false
+                                    ? "failed"
+                                    : "running"
+                              )}
 
-                    <div className="flex items-start gap-3">
-                      <Cpu className="size-5 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Model</p>
-                        <p className="text-xs text-muted-foreground">
-                          {agent.config?.model ?? "—"}
-                        </p>
-                      </div>
-                    </div>
+                              <div className="flex-1">
+                                <CollapsibleTrigger className="group flex w-full items-start justify-between text-left">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3">
+                                      <h3 className="font-semibold">{stepMetadata?.name || step.stepId}</h3>
+                                      <Badge variant="outline" className="text-xs">
+                                        {step.type}
+                                      </Badge>
+                                    </div>
 
-                    <div className="flex items-start gap-3">
-                      <Thermometer className="size-5 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Temperature</p>
-                        <p className="text-xs text-muted-foreground">
-                          {agent.config?.temperature ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-sm font-medium">Capabilities</p>
-                      <div className="flex flex-wrap gap-2">
-                        {(agent.capabilities ?? []).map((tool: string) => (
-                          <Badge key={tool} variant="outline" className="text-xs">
-                            {tool}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-
-              {agent?.memory && agent.memory.length > 0 && (
-                <Card className="p-6">
-                  <div className="mb-4 flex items-center gap-2">
-                    <Database className="size-5 text-primary" />
-                    <h2 className="text-lg font-semibold">Agent Memory</h2> {/*  IN PROGRESS */}
-                  </div>
-
-                  <div className="space-y-3">
-                    {agent.memory.map((item: AgentMemoryItem, index: number) => (
-                      <Card key={`${item.createdAt}-${index}`} className="bg-muted/30 p-3">
-                        <div className="mb-1 flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={
-                              item.type === "system"
-                                ? "bg-primary/20 text-primary border-primary/30"
-                                : "bg-success/20 text-success border-success/30"
-                            }
-                          >
-                            {item.type}
-                          </Badge>
-
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(item.createdAt).toLocaleString()}
-                          </span>
+                                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                      <Clock className="size-3" />
+                                      {new Date(step.timestamp).toLocaleString()}
+                                    </div>
+                                  </div>
+                                  <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="mt-3">
+                                  <Card className="bg-muted/30 p-4">
+                                    <p className="mb-2 text-sm font-medium">Output:</p>
+                                    {step.output && (
+                                      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-background p-3 font-mono text-xs text-foreground">
+                                        {renderStepOutput(step.output)}
+                                      </pre>
+                                    )}
+                                  </Card>
+                                </CollapsibleContent>
+                              </div>
+                            </div>
+                          </Collapsible>
                         </div>
+                      );
+                    })}
 
-                        <p className="text-xs">{item.content}</p>
-                      </Card>
-                    ))}
+                    {executedSteps === 0 && (
+                      <p className="opacity-60">No steps executed yet.</p>
+                    )}
                   </div>
                 </Card>
-              )}
 
+              </div>
+
+              <div className="space-y-6">
+                {agent && (
+                  <Card className="p-6">
+                    <h2 className="mb-4 text-lg font-semibold">Agent Inspector</h2>
+
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <Bot className="size-5 text-primary" />
+                        <div>
+                          <p className="text-sm font-medium">{agent.name}</p>
+                          <p className="text-xs text-muted-foreground">{agent.type}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Cpu className="size-5 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">Model</p>
+                          <p className="text-xs text-muted-foreground">
+                            {agent.config?.model ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Thermometer className="size-5 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">Temperature</p>
+                          <p className="text-xs text-muted-foreground">
+                            {agent.config?.temperature ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-sm font-medium">Capabilities</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(agent.capabilities ?? []).map((tool: string) => (
+                            <Badge key={tool} variant="outline" className="text-xs">
+                              {tool}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+
+                {agent?.memory && agent.memory.length > 0 && (
+                  <Card className="p-6">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Database className="size-5 text-primary" />
+                      <h2 className="text-lg font-semibold">Agent Memory</h2> {/*  IN PROGRESS */}
+                    </div>
+
+                    <div className="space-y-3">
+                      {agent.memory.map((item: AgentMemoryItem, index: number) => (
+                        <Card key={`${item.createdAt}-${index}`} className="bg-muted/30 p-3">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.type === "system"
+                                  ? "bg-primary/20 text-primary border-primary/30"
+                                  : "bg-success/20 text-success border-success/30"
+                              }
+                            >
+                              {item.type}
+                            </Badge>
+
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(item.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+
+                          <p className="text-xs">{item.content}</p>
+                        </Card>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+              </div>
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
     </AuthGuard>
   )
 }

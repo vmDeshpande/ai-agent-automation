@@ -75,7 +75,7 @@ async function runWorkerLoop() {
         taskId: task._id
       };
 
-      const steps = task.metadata?.steps || [];
+      const steps = Array.isArray(task.steps) ? task.steps : [];
       let success = true;
 
       if (steps.length > 0) {
