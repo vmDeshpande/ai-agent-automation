@@ -216,6 +216,13 @@ frontend/
 
 ---
 
+### Versioning
+
+- This project follows semantic versioning.
+- Current version: **v0.1.0** (pre-1.0, APIs may change)
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome!
