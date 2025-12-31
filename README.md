@@ -3,6 +3,9 @@
 **AI Agent Automation Platform** is an open-source, backend-first **AI workflow automation system** for building, running, and scheduling intelligent agent-driven pipelines — fully local, secure, and production-oriented.
 
 This project is designed as a **real execution engine**, not a demo or prompt playground. It enables developers to orchestrate autonomous AI agents, automate backend workflows, run tasks on schedules, and inspect executions with full observability.
+
+**⚠️ This project is under active development.**
+
 [Run Locally](https://github.com/vmDeshpande/ai-agent-automation#-local-development)
 
 
