@@ -79,7 +79,10 @@ export default function WorkflowTasksPage() {
         <AuthGuard>
         <div className="flex min-h-screen">
             <AppSidebar />
-            <main className="flex-1 pl-64">
+            <main
+  className="flex-1 transition-[padding] duration-300"
+  style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
+>
                 <div className="p-8 space-y-6">
                     {/* Header */}
                     <div>

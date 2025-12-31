@@ -25,7 +25,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-
+import { useToast } from "@/hooks/use-toast";
 type Agent = {
   _id: string;
   name: string;
@@ -54,6 +54,7 @@ function getProviderColor(model?: string) {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const { addToast } = useToast();
 
   async function fetchAgents() {
     try {
@@ -87,112 +88,132 @@ export default function AgentsPage() {
     });
 
     fetchAgents();
+    addToast({
+      type: "success",
+      title: "Agent deleted successfully",
+      description: "Your agent was deleted successfully",
+    });
   }
 
   return (
     <AuthGuard>
-    <div className="flex min-h-screen">
-      <AppSidebar />
-      <main className="flex-1 pl-64">
-        <div className="p-8">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">AI Agents</h1>
-              <p className="mt-2 text-muted-foreground">
-                Manage your AI agents and their configurations
-              </p>
+      <div className="flex min-h-screen">
+        <AppSidebar />
+        <main
+          className="flex-1 transition-[padding] duration-300"
+          style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
+        >
+          <div className="p-8">
+            <div className="mb-8 flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold">AI Agents</h1>
+                <p className="mt-2 text-muted-foreground">
+                  Manage your AI agents and their configurations
+                </p>
+              </div>
+
+              <CreateAgentModal onCreated={fetchAgents} />
             </div>
 
-            <CreateAgentModal onCreated={fetchAgents} />
+            {loading ? (
+              <p className="opacity-70">Loading agents…</p>
+            ) : agents.length === 0 ? (
+              <p className="opacity-60">No agents created yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {agents.map(
+                  (agent) => (
+                    console.log(agent),
+                    (
+                      <Card key={agent._id} className="p-6">
+                        <div className="mb-4 flex items-start justify-between">
+                          <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
+                            <Cpu className="size-6 text-primary" />
+                          </div>
+
+                          <Badge
+                            className={
+                              agent.status === "active"
+                                ? "bg-success/20 text-success border-success/30"
+                                : "bg-muted text-muted-foreground"
+                            }
+                          >
+                            {agent.status ?? "idle"}
+                          </Badge>
+                        </div>
+
+                        <h3 className="text-lg font-semibold">{agent.name}</h3>
+
+                        <Badge
+                          variant="outline"
+                          className={`mt-2 ${getProviderColor(
+                            agent.config?.model
+                          )}`}
+                        >
+                          {agent.config?.model ?? "default"}
+                        </Badge>
+
+                        <div className="mt-4 space-y-3 border-t border-border pt-4">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Model</span>
+                            <span className="font-mono text-xs">
+                              {agent.config?.model ?? "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Thermometer className="size-4" />
+                              <span>Temperature</span>
+                            </div>
+                            <span className="font-medium">
+                              {agent.config?.temperature ?? "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Zap className="size-4" />
+                              <span>Max Tokens</span>
+                            </div>
+                            <span className="font-medium">
+                              {agent.config?.maxTokens ?? "—"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              Used in
+                            </span>
+                            <span className="font-medium">2 workflows</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => deleteAgent(agent._id)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </Card>
+                    )
+                  )
+                )}
+              </div>
+            )}
           </div>
-
-          {loading ? (
-            <p className="opacity-70">Loading agents…</p>
-          ) : agents.length === 0 ? (
-            <p className="opacity-60">No agents created yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {agents.map((agent) => (
-                console.log(agent),
-                <Card key={agent._id} className="p-6">
-                  <div className="mb-4 flex items-start justify-between">
-                    <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
-                      <Cpu className="size-6 text-primary" />
-                    </div>
-
-                    <Badge
-                      className={
-                        agent.status === "active"
-                          ? "bg-success/20 text-success border-success/30"
-                          : "bg-muted text-muted-foreground"
-                      }
-                    >
-                      {agent.status ?? "idle"}
-                    </Badge>
-                  </div>
-
-                  <h3 className="text-lg font-semibold">{agent.name}</h3>
-
-                  <Badge
-                    variant="outline"
-                    className={`mt-2 ${getProviderColor(agent.config?.model)}`}
-                  >
-                    {agent.config?.model ?? "default"}
-                  </Badge>
-
-                  <div className="mt-4 space-y-3 border-t border-border pt-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Model</span>
-                      <span className="font-mono text-xs">
-                        {agent.config?.model ?? "—"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Thermometer className="size-4" />
-                        <span>Temperature</span>
-                      </div>
-                      <span className="font-medium">
-                        {agent.config?.temperature ?? "—"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Zap className="size-4" />
-                        <span>Max Tokens</span>
-                      </div>
-                      <span className="font-medium">
-                        {agent.config?.maxTokens ?? "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Used in</span>
-                      <span className="font-medium">2 workflows</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive"
-                      onClick={() => deleteAgent(agent._id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
     </AuthGuard>
   );
 }
@@ -209,6 +230,7 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
   const [type, setType] = useState<"llm" | "tool">("llm");
   const [model, setModel] = useState("gpt-4");
   const [temperature, setTemperature] = useState(0.7);
+  const { addToast } = useToast();
 
   async function createAgent() {
     try {
@@ -245,9 +267,19 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
       setTemperature(0.7);
 
       onCreated?.();
+      addToast({
+        type: "success",
+        title: "Agent created successfully",
+        description: "Your agent was created successfully",
+      });
     } catch (err) {
       console.error("Create agent failed:", err);
-      alert("Failed to create agent");
+      // alert("Failed to create agent");
+      addToast({
+        type: "error",
+        title: "Failed to create agent",
+        description: "There was an error creating the agent. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -301,9 +333,15 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="llama-3.1-8b-instant">LLaMA 3.1 8B Instant</SelectItem>
-                <SelectItem value="llama-3.3-70b-versatile">LLaMA 3.3 70B Versatile</SelectItem>
-                <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash</SelectItem>
+                <SelectItem value="llama-3.1-8b-instant">
+                  LLaMA 3.1 8B Instant
+                </SelectItem>
+                <SelectItem value="llama-3.3-70b-versatile">
+                  LLaMA 3.3 70B Versatile
+                </SelectItem>
+                <SelectItem value="gemini-1.5-flash">
+                  Gemini 1.5 Flash
+                </SelectItem>
                 <SelectItem value="gemma2-9b-it">Gemma2 9b It</SelectItem>
                 <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
               </SelectContent>
@@ -336,10 +374,7 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
           >
             Cancel
           </Button>
-          <Button
-            onClick={createAgent}
-            disabled={loading || !name.trim()}
-          >
+          <Button onClick={createAgent} disabled={loading || !name.trim()}>
             {loading ? "Creating…" : "Create Agent"}
           </Button>
         </DialogFooter>

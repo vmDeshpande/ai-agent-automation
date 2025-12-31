@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 
 type CreateScheduleDialogProps = {
   onCreated: () => void;
@@ -40,6 +41,7 @@ export default function CreateScheduleDialog({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { addToast } = useToast();
 
   const generatedCron = useMemo(() => {
     if (mode === "advanced") return cron;
@@ -97,8 +99,15 @@ export default function CreateScheduleDialog({
       setUnit("minute");
 
       onCreated();
+      addToast({
+        type: "success",
+        title: "Schedule Created Successfully",
+        description: "Your schedule was created successfully",
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create schedule");
+      setError(
+        err instanceof Error ? err.message : "Failed to create schedule"
+      );
     } finally {
       setLoading(false);
     }
@@ -133,9 +142,7 @@ export default function CreateScheduleDialog({
             <Label>Advanced Cron</Label>
             <Switch
               checked={mode === "advanced"}
-              onCheckedChange={(v) =>
-                setMode(v ? "advanced" : "simple")
-              }
+              onCheckedChange={(v) => setMode(v ? "advanced" : "simple")}
             />
           </div>
 

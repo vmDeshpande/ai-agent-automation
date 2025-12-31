@@ -4,30 +4,90 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.15 0 0);
+
+  --card: oklch(0.96 0 0);
+  --card-foreground: oklch(0.15 0 0);
+
+  --popover: oklch(0.96 0 0);
+  --popover-foreground: oklch(0.15 0 0);
+
+  --primary: oklch(0.55 0.22 265);
+  --primary-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.9 0 0);
+  --secondary-foreground: oklch(0.15 0 0);
+
+  --muted: oklch(0.92 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+
+  --accent: oklch(0.92 0 0);
+  --accent-foreground: oklch(0.15 0 0);
+
+  --destructive: oklch(0.6 0.25 25);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --success: oklch(0.62 0.18 150);
+  --success-foreground: oklch(0.98 0 0);
+
+  --warning: oklch(0.75 0.15 85);
+  --warning-foreground: oklch(0.2 0 0);
+
+  --border: oklch(0.85 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.55 0.22 265);
+
+  --radius: 0.5rem;
+
+  --sidebar: oklch(0.96 0 0);
+  --sidebar-foreground: oklch(0.15 0 0);
+  --sidebar-primary: oklch(0.55 0.22 265);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.9 0 0);
+  --sidebar-accent-foreground: oklch(0.15 0 0);
+  --sidebar-border: oklch(0.85 0 0);
+  --sidebar-ring: oklch(0.55 0.22 265);
+}
+
+/* ---------------- DARK ---------------- */
+.dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+
   --card: oklch(0.18 0 0);
   --card-foreground: oklch(0.985 0 0);
+
   --popover: oklch(0.18 0 0);
   --popover-foreground: oklch(0.985 0 0);
+
   --primary: oklch(0.62 0.22 265);
   --primary-foreground: oklch(0.98 0 0);
+
   --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.98 0 0);
+
   --muted: oklch(0.25 0 0);
   --muted-foreground: oklch(0.65 0 0);
+
   --accent: oklch(0.25 0 0);
   --accent-foreground: oklch(0.98 0 0);
+
   --destructive: oklch(0.55 0.25 25);
   --destructive-foreground: oklch(0.98 0 0);
+
   --success: oklch(0.65 0.18 150);
   --success-foreground: oklch(0.98 0 0);
+
   --warning: oklch(0.75 0.15 85);
   --warning-foreground: oklch(0.15 0 0);
+
   --border: oklch(0.25 0 0);
   --input: oklch(0.25 0 0);
   --ring: oklch(0.62 0.22 265);
+
   --radius: 0.5rem;
+
   --sidebar: oklch(0.18 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.62 0.22 265);
@@ -36,6 +96,102 @@
   --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(0.25 0 0);
   --sidebar-ring: oklch(0.62 0.22 265);
+}
+
+/* ---------------- MIDNIGHT ---------------- */
+.midnight {
+  --background: oklch(0.08 0.03 260);
+  --foreground: oklch(0.95 0.02 260);
+
+  --card: oklch(0.12 0.03 260);
+  --card-foreground: oklch(0.95 0.02 260);
+
+  --popover: oklch(0.12 0.03 260);
+  --popover-foreground: oklch(0.95 0.02 260);
+
+  --primary: oklch(0.65 0.22 265);
+  --primary-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.2 0.03 260);
+  --secondary-foreground: oklch(0.95 0.02 260);
+
+  --muted: oklch(0.2 0.03 260);
+  --muted-foreground: oklch(0.6 0.02 260);
+
+  --accent: oklch(0.2 0.03 260);
+  --accent-foreground: oklch(0.95 0.02 260);
+
+  --destructive: oklch(0.55 0.25 25);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --success: oklch(0.6 0.18 150);
+  --success-foreground: oklch(0.98 0 0);
+
+  --warning: oklch(0.72 0.15 85);
+  --warning-foreground: oklch(0.2 0 0);
+
+  --border: oklch(0.22 0.04 260);
+  --input: oklch(0.22 0.04 260);
+  --ring: oklch(0.65 0.22 265);
+
+  --radius: 0.5rem;
+
+  --sidebar: oklch(0.12 0.03 260);
+  --sidebar-foreground: oklch(0.95 0.02 260);
+  --sidebar-primary: oklch(0.65 0.22 265);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.2 0.03 260);
+  --sidebar-accent-foreground: oklch(0.95 0.02 260);
+  --sidebar-border: oklch(0.22 0.04 260);
+  --sidebar-ring: oklch(0.65 0.22 265);
+}
+
+/* ---------------- SOLARIZED ---------------- */
+.solarized {
+  --background: oklch(0.95 0.02 85);
+  --foreground: oklch(0.25 0.05 85);
+
+  --card: oklch(0.92 0.03 85);
+  --card-foreground: oklch(0.25 0.05 85);
+
+  --popover: oklch(0.92 0.03 85);
+  --popover-foreground: oklch(0.25 0.05 85);
+
+  --primary: oklch(0.55 0.15 85);
+  --primary-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.9 0.03 85);
+  --secondary-foreground: oklch(0.25 0.05 85);
+
+  --muted: oklch(0.9 0.03 85);
+  --muted-foreground: oklch(0.5 0.05 85);
+
+  --accent: oklch(0.9 0.03 85);
+  --accent-foreground: oklch(0.25 0.05 85);
+
+  --destructive: oklch(0.55 0.25 25);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --success: oklch(0.6 0.18 150);
+  --success-foreground: oklch(0.98 0 0);
+
+  --warning: oklch(0.7 0.15 85);
+  --warning-foreground: oklch(0.25 0.05 85);
+
+  --border: oklch(0.75 0.05 85);
+  --input: oklch(0.85 0.05 85);
+  --ring: oklch(0.55 0.15 85);
+
+  --radius: 0.5rem;
+
+  --sidebar: oklch(0.92 0.03 85);
+  --sidebar-foreground: oklch(0.25 0.05 85);
+  --sidebar-primary: oklch(0.55 0.15 85);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.9 0.03 85);
+  --sidebar-accent-foreground: oklch(0.25 0.05 85);
+  --sidebar-border: oklch(0.75 0.05 85);
+  --sidebar-ring: oklch(0.55 0.15 85);
 }
 
 @theme inline {
@@ -105,5 +261,48 @@
   }
   .text-destructive {
     color: var(--destructive);
+  }
+}
+
+/* -------------------------
+   Theme transition system
+------------------------- */
+
+/* Base state: NO transitions */
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Only animate DURING theme change */
+.theme-transition,
+.theme-transition body,
+.theme-transition * {
+  transition:
+    background-color 250ms ease,
+    color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    fill 250ms ease,
+    stroke 250ms ease;
+}
+
+/* Avoid animating layout-affecting stuff */
+.theme-transition * {
+  transition-property:
+    background-color,
+    color,
+    border-color,
+    box-shadow,
+    fill,
+    stroke;
+}
+
+/* Accessibility: disable if user prefers */
+@media (prefers-reduced-motion: reduce) {
+  .theme-transition,
+  .theme-transition * {
+    transition: none !important;
   }
 }

@@ -11,6 +11,8 @@ const webhookRoutes = require("./routes/webhook.routes"); // admin
 const webhookPublicRoutes = require("./routes/webhook.public.routes"); // public
 const documentRoutes = require("./routes/document.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
+const settingsRoutes = require("./routes/settings.routes");
+const systemRoutes = require("./routes/system.routes");
 require("dotenv").config();
 
 const app = express();
@@ -33,6 +35,8 @@ app.use("/api/schedules", scheduleRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/webhook", webhookPublicRoutes);
 app.use("/api/logs", logRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/system", systemRoutes);
 
 // generic 404
 app.use((req, res) => res.status(404).json({ error: "Not found" }));

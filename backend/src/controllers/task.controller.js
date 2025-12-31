@@ -20,30 +20,49 @@ async function createTask(req, res) {
     const userId = req.user._id;
     const { name, workflowId, input, metadata } = req.body;
 
+    let workflow = null;
+    let steps = [];
     let agentId = null;
 
     if (workflowId) {
-      const workflow = await Workflow.findById(workflowId);
+      workflow = await Workflow.findById(workflowId);
       if (!workflow) {
         return sendError(res, 404, "workflow_not_found");
       }
 
       agentId = workflow.agentId || null;
+
+      // ✅ SINGLE SOURCE OF TRUTH
+      steps = Array.isArray(workflow.metadata?.steps)
+        ? workflow.metadata.steps
+        : [];
+
+      if (steps.length === 0) {
+        return sendError(res, 400, "workflow_has_no_steps");
+      }
     }
 
     const task = await Task.create({
-      name: name || "manual-task",
+      name: name || `Workflow Run - ${workflow?.name || "task"}`,
       workflowId: workflowId || null,
-      agentId, // ✅ comes from workflow
+      agentId,
       userId,
       input: input || {},
-      metadata: metadata || {},
+
+      // 🔥 THIS IS WHAT THE RUNNER EXECUTES
+      steps,
+      currentStep: 0,
+
+      metadata: {
+        ...(metadata || {}),
+        runningBy: "manual_run",
+      },
     });
 
     if (workflowId) {
-      const workflow = await Workflow.findById(workflowId);
-      workflow.tasks.unshift(task._id); // newest on top
-      await workflow.save();
+      await Workflow.findByIdAndUpdate(workflowId, {
+        $push: { tasks: task._id },
+      });
     }
 
     return sendOK(res, { task });
@@ -52,7 +71,6 @@ async function createTask(req, res) {
     return sendError(res, 500, "server_error");
   }
 }
-
 
 // -----------------------------
 // List Tasks with pagination
