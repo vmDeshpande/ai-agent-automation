@@ -5,6 +5,7 @@ import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import { useAssistantContext } from "@/context/assistant-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,14 +98,57 @@ function getTypeColor(type: StepType) {
   }
 }
 
+function summarizeStep(step: WorkflowStep) {
+  switch (step.type) {
+    case "LLM":
+      return step.prompt
+        ? `Prompt: ${step.prompt.slice(0, 120)}${
+            step.prompt.length > 120 ? "…" : ""
+          }`
+        : "No prompt configured";
+
+    case "HTTP": {
+      const method = step.method ?? "GET";
+      const url = step.url?.trim() || "❌ not set";
+      const body = step.body?.trim();
+
+      let bodyStatus = "none";
+
+      if (body) {
+        try {
+          JSON.parse(body);
+          bodyStatus = "valid JSON";
+        } catch {
+          bodyStatus = "invalid JSON";
+        }
+      }
+
+      return [`Method: ${method}`, `URL: ${url}`, `Body: ${bodyStatus}`].join(
+        " | "
+      );
+    }
+
+    case "Delay":
+      return `Delay for ${step.delay ?? 0} seconds`;
+
+    case "Tool":
+      return "Tool execution step";
+
+    default:
+      return "Unknown step";
+  }
+}
+
 /* ---------------- PAGE ---------------- */
 
 export default function WorkflowBuilderPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
+  const [workflowName, setWorkflowName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
+  const { setContext, clearContext } = useAssistantContext();
 
   async function fetchWorkflow() {
     try {
@@ -118,6 +162,7 @@ export default function WorkflowBuilderPage() {
       if (!data.ok) return;
 
       const workflow: WorkflowResponse = data.workflow;
+      setWorkflowName(workflow.name);
 
       const backendSteps = workflow.metadata?.steps ?? [];
 
@@ -151,6 +196,28 @@ export default function WorkflowBuilderPage() {
   useEffect(() => {
     fetchWorkflow();
   }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    setContext({
+      page: "workflow-builder",
+      workflowId: id,
+      workflowName: workflowName ?? undefined,
+      status: "editing",
+
+      builderSteps: steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        type: s.type,
+        summary: summarizeStep(s),
+      })),
+    });
+
+    return () => {
+      clearContext();
+    };
+  }, [id, workflowName, steps.length]);
 
   function addStep() {
     setSteps((prev) => [
@@ -231,7 +298,6 @@ export default function WorkflowBuilderPage() {
       });
     } catch (err) {
       console.error("Save workflow failed:", err);
-      // alert("❌ Failed to save workflow");
       addToast({
         type: "error",
         title: "Failed to save workflow",
@@ -314,6 +380,25 @@ export default function WorkflowBuilderPage() {
                     <Card
                       key={step.id}
                       className="p-6 transition-shadow hover:shadow-lg"
+                      onClick={() =>
+                        setContext({
+                          page: "workflow-builder",
+                          workflowId: id,
+                          workflowName: workflowName ?? undefined,
+                          status: "editing",
+
+                          builderSteps: steps.map((s) => ({
+                            id: s.id,
+                            name: s.name,
+                            type: s.type,
+                            summary: summarizeStep(s),
+                          })),
+                          stepId: step.id,
+                          stepName: step.name,
+                          stepType: step.type,
+                          stepDescription: summarizeStep(step),
+                        })
+                      }
                     >
                       <div className="mb-4 flex items-center justify-between">
                         <div className="flex items-center gap-3">

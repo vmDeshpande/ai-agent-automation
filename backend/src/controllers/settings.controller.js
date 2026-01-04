@@ -12,24 +12,31 @@ async function getSettings(req, res) {
 
 async function updateSettings(req, res) {
   try {
+    const update = {};
+
+    if (req.body.worker) update.worker = req.body.worker;
+    if (req.body.ui) update.ui = req.body.ui;
+    if (req.body.scheduler) update.scheduler = req.body.scheduler;
+    if (req.body.assistant) update.assistant = req.body.assistant;
+
     const settings = await SystemSettings.findOneAndUpdate(
       { userId: req.user._id },
+      { $set: update },
       {
-        $set: {
-          worker: req.body.worker,
-          ui: req.body.ui,
-        },
-      },
-      { new: true, upsert: true }
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
     );
 
     bumpWorkerSettingsVersion();
 
     res.json({ ok: true, settings });
   } catch (err) {
-    console.error("updateWorkerSettings error", err);
+    console.error("updateSettings error", err);
     res.status(500).json({ error: "server_error" });
   }
 }
+
 
 module.exports = { getSettings, updateSettings };

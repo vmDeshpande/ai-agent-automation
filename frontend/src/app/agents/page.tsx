@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Cpu, Thermometer, Zap } from "lucide-react";
+import { useAssistantContext } from "@/context/assistant-context";
 import {
   Dialog,
   DialogTrigger,
@@ -55,6 +56,7 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const { addToast } = useToast();
+  const { setContext, clearContext } = useAssistantContext();
 
   async function fetchAgents() {
     try {
@@ -76,6 +78,28 @@ export default function AgentsPage() {
   useEffect(() => {
     fetchAgents();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    setContext({
+      page: "agents",
+
+      status: `${agents.length} agent(s) available`,
+
+      recentActivity: agents.map((agent) => ({
+        type: "workflow", // semantic: agents power workflows
+        name: agent.name,
+        status:
+          agent.status ??
+          (agent.config?.model ? "configured" : "missing config"),
+      })),
+    });
+
+    return () => {
+      clearContext();
+    };
+  }, [loading, agents.length]);
 
   async function deleteAgent(id: string) {
     if (!confirm("Delete this agent?")) return;
@@ -125,7 +149,19 @@ export default function AgentsPage() {
                   (agent) => (
                     console.log(agent),
                     (
-                      <Card key={agent._id} className="p-6">
+                      <Card
+                        key={agent._id}
+                        className="p-6"
+                        onClick={() =>
+                          setContext({
+                            page: "agents",
+                            agentId: agent._id,
+                            agentName: agent.name,
+                            model: agent.config?.model,
+                            temperature: agent.config?.temperature
+                          })
+                        }
+                      >
                         <div className="mb-4 flex items-start justify-between">
                           <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
                             <Cpu className="size-6 text-primary" />

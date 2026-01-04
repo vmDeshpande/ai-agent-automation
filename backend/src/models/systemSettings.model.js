@@ -26,6 +26,12 @@ const SystemSettingsSchema = new mongoose.Schema(
         default: "dark",
       },
     },
+    assistant: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+    },
   },
   { timestamps: true }
 );

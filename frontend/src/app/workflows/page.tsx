@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
+import { useAssistantContext } from "@/context/assistant-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +61,7 @@ export default function WorkflowsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const { addToast } = useToast();
+  const { setContext, clearContext } = useAssistantContext();
 
   async function fetchAgents() {
     const res = await fetch("http://localhost:5000/api/agents", {
@@ -141,6 +143,26 @@ export default function WorkflowsPage() {
   useEffect(() => {
     fetchAgents();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    setContext({
+      page: "workflows",
+
+      recentActivity: workflows.slice(0, 5).map((wf) => ({
+        type: "workflow",
+        name: wf.name,
+        description: wf.description,
+        agent: getAgentName(wf.agentId) || "No agent",
+        status: wf.status,
+      })),
+    });
+
+    return () => {
+      clearContext();
+    };
+  }, [loading, workflows]);
 
   function getAgentName(agentId?: string | null) {
     if (!agentId) return "No agent";

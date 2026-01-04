@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download, Pause, Play, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAssistantContext } from "@/context/assistant-context";
 
 /* -------------------------
    Types
@@ -69,6 +70,7 @@ export default function LogsPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const { addToast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { setContext, clearContext } = useAssistantContext();
 
   /* -------------------------
      Fetch logs
@@ -92,10 +94,6 @@ export default function LogsPage() {
             new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
         setLogs(sorted);
-        addToast({
-          type: "info",
-          title: "Logs Refreshed",
-        });
       }
     } catch (err) {
       console.error("Failed to fetch logs:", err);
@@ -116,6 +114,34 @@ export default function LogsPage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const recentErrors = logs.filter((l) => l.level === "error").slice(-5);
+
+    setContext({
+      page: "logs",
+      logScope: "system",
+
+      status: `${recentErrors.length} recent error(s)`,
+
+      recentActivity: recentErrors.map((l) => ({
+        type: "workflow" as const,
+        name: l.message.slice(0, 80),
+        status: "error",
+      })),
+
+      // 🔥 NEW: real debugging signal
+      logsSummary: recentErrors.map((l) => ({
+        level: l.level,
+        message: l.message,
+        time: l.createdAt,
+      })),
+    });
+
+    return () => clearContext();
+  }, [loading, logs.length]);
 
   /* -------------------------
      Auto-scroll

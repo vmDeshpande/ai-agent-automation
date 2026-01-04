@@ -9,6 +9,7 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, Trash2 } from "lucide-react";
+import { useAssistantContext } from "@/context/assistant-context";
 import {
   Pagination,
   PaginationContent,
@@ -59,6 +60,7 @@ export default function TasksPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
+  const { setContext, clearContext } = useAssistantContext();
 
   async function deleteTask(taskId: string) {
     const confirmed = confirm("Delete this task permanently?");
@@ -126,6 +128,24 @@ export default function TasksPage() {
   const filteredTasks = tasks.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  useEffect(() => {
+    setContext({
+      page: "tasks",
+
+      taskStatus: `${filteredTasks.length} task(s) visible on page ${page} of ${totalPages}`,
+
+      recentActivity: filteredTasks.slice(0, 5).map((t) => ({
+        type: "task",
+        name: t.name,
+        status: t.status,
+      })),
+    });
+
+    return () => {
+      clearContext();
+    };
+  }, [page, totalPages, filteredTasks.length]);
 
   return (
     <AuthGuard>

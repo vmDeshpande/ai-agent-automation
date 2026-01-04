@@ -10,6 +10,8 @@ import { useTheme } from "next-themes";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
+import { Switch } from "@/components/ui/switch";
+import { useAssistantContext } from "@/context/assistant-context";
 import { useToast } from "@/hooks/use-toast";
 
 /* -------------------------
@@ -27,6 +29,9 @@ type SystemSettings = {
   ui: {
     theme: UiTheme;
   };
+  assistant?: {
+    enabled: boolean;
+  };
 };
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -36,6 +41,9 @@ const DEFAULT_SETTINGS: SystemSettings = {
   },
   ui: {
     theme: "dark",
+  },
+  assistant: {
+    enabled: false,
   },
 };
 
@@ -79,6 +87,7 @@ export default function SettingsPage() {
   const [savingWorker, setSavingWorker] = useState(false);
   const { theme, setTheme } = useTheme();
   const { addToast } = useToast();
+  const { setMode } = useAssistantContext();
 
   /* -------------------------
      Env status
@@ -135,6 +144,14 @@ export default function SettingsPage() {
     const data = await res.json();
     if (data.ok) setEnv(data.env);
   }
+
+  useEffect(() => {
+    if (env?.groq) {
+      setMode("online");
+    } else {
+      setMode("offline");
+    }
+  }, [env]);
 
   /* -------------------------
      Save worker settings
@@ -301,6 +318,68 @@ export default function SettingsPage() {
                       <ThemeOption value="solarized" label="Solarized" />
                       <ThemeOption value="system" label="System" />
                     </RadioGroup>
+                  </Card>
+                </motion.div>
+                {/* AI Assistance */}
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Card className="p-6 space-y-4">
+                    <h2 className="text-lg font-semibold">AI Assistance</h2>
+
+                    <p className="text-sm text-muted-foreground">
+                      Enable AI-powered guidance inside workflows and steps.
+                    </p>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <div className="font-medium">Enable AI Assistant</div>
+                        <div className="text-xs text-muted-foreground">
+                          Uses your configured LLM API keys
+                        </div>
+                      </div>
+
+                      <Switch
+                        checked={!!settings.assistant?.enabled}
+                        disabled={
+                          !env?.groq && !env?.openai && !env?.gemini && !env?.hf
+                        }
+                        onCheckedChange={async (checked) => {
+                          setSettings((prev) => ({
+                            ...prev,
+                            assistant: { enabled: checked },
+                          }));
+
+                          await fetch("http://localhost:5000/api/settings", {
+                            method: "PUT",
+                            headers: {
+                              "Content-Type": "application/json",
+                              Authorization:
+                                "Bearer " + localStorage.getItem("token"),
+                            },
+                            body: JSON.stringify({
+                              assistant: { enabled: checked },
+                            }),
+                          });
+
+                          addToast({
+                            type: "success",
+                            title: checked
+                              ? "AI Assistant Enabled"
+                              : "AI Assistant Disabled",
+                            description: checked
+                              ? "Online AI assistance is now active"
+                              : "Assistant switched to offline mode",
+                          });
+                        }}
+                      />
+                    </div>
+
+                    {/* Status hint */}
+                    {!env?.groq && !env?.openai && !env?.gemini && !env?.hf && (
+                      <p className="text-xs text-destructive">
+                        No LLM API keys detected. Add one to enable AI
+                        assistance.
+                      </p>
+                    )}
                   </Card>
                 </motion.div>
               </div>

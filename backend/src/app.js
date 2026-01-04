@@ -1,6 +1,5 @@
 const express = require("express");
 const cors = require("cors");
-const connectDB = require("./config/db"); // assumes you already have this
 const authRoutes = require("./routes/auth.routes.js");
 const taskRoutes = require("./routes/task.routes.js");
 const workflowRoutes = require("./routes/workflow.routes");
@@ -13,6 +12,7 @@ const documentRoutes = require("./routes/document.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const settingsRoutes = require("./routes/settings.routes");
 const systemRoutes = require("./routes/system.routes");
+const assistantRoutes = require("./routes/assistant.routes");
 require("dotenv").config();
 
 const app = express();
@@ -37,6 +37,7 @@ app.use("/webhook", webhookPublicRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/system", systemRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 // generic 404
 app.use((req, res) => res.status(404).json({ error: "Not found" }));

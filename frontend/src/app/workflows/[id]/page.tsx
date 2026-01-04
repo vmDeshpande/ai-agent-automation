@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useAssistantContext } from "@/context/assistant-context";
 import {
   Play,
   Settings,
@@ -29,6 +30,11 @@ interface CreateTaskModalProps {
   workflowId: string;
   refreshWorkflow: () => void;
 }
+
+type Agent = {
+  _id: string;
+  name: string;
+};
 
 interface Task {
   _id: string;
@@ -136,10 +142,12 @@ function getStepDescription(step: any) {
 export default function WorkflowDetailPage() {
   const { id } = useParams();
 
+  const { setContext } = useAssistantContext();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [tasks, setTasks] = useState<string[]>([]);
   const [latestTask, setLatestTask] = useState<Task | null>(null);
   const [agents, setAgents] = useState<any[]>([]);
+  const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const { addToast } = useToast();
@@ -209,6 +217,22 @@ export default function WorkflowDetailPage() {
       setLoading(false);
     }
   }
+  useEffect(() => {
+    if (!workflow) return;
+
+    setContext({
+      page: "workflow-detail",
+      workflowId: workflow._id,
+      workflowName: workflow.name,
+      status: workflow.status,
+      agentName: getAgentName(workflow.agentId) || "No agent",
+    });
+  }, [workflow]);
+
+  function getAgentName(agentId?: string | null) {
+    if (!agentId) return "No agent";
+    return agentMap[agentId] ?? "Unknown agent";
+  }
 
   /** Fetch all agents */
   async function fetchAgents() {
@@ -220,10 +244,29 @@ export default function WorkflowDetailPage() {
       const data = await res.json();
       if (data.ok) {
         setAgents(data.agents);
+        // 🔥 build fast lookup map
+        const map: Record<string, string> = {};
+        data.agents.forEach((a: Agent) => {
+          map[a._id] = a.name;
+        });
+
+        setAgentMap(map);
       }
     } catch (err) {
       console.error("Error loading agents:", err);
     }
+  }
+
+  function handleStepSelect(step: WorkflowStep) {
+    setContext({
+      page: "workflow-detail",
+      workflowId: workflow?._id,
+      workflowName: workflow?.name,
+      stepId: step.stepId,
+      stepName: step.name ?? "Unnamed step",
+      stepType: normalizeStepType(step.type),
+      stepDescription: getStepDescription(step),
+    });
   }
 
   /** Assign selected agent */
@@ -387,7 +430,10 @@ export default function WorkflowDetailPage() {
 
                   return (
                     <div key={step.stepId}>
-                      <Card className={`p-6 ${getStepColor(status)}`}>
+                      <Card
+                        className={`p-6 cursor-pointer ${getStepColor(status)}`}
+                        onClick={() => handleStepSelect(step)}
+                      >
                         <div className="flex items-start gap-4">
                           {getStepIcon(status)}
 

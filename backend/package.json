@@ -29,6 +29,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "form-data": "^4.0.5",
+    "groq-sdk": "^0.37.0",
     "huggingface": "^1.4.0",
     "jsonwebtoken": "^9.0.2",
     "mkdirp": "^3.0.1",
