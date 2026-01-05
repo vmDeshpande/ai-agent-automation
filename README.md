@@ -24,6 +24,12 @@ Key ideas:
 
 ---
 
+> [!TIP]
+> Starring this repo helps more developers discover AI Agent Automation
+>
+> ![gif](repo.gif)
+> 
+
 ## 🚀 Key Features
 
 ### 🤖 Agent-Based Workflow Execution
