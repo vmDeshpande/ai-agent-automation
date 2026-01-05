@@ -1,172 +1,179 @@
-# AI Agent Automation Platform – Open-Source Workflow Automation Engine
+# ⚡ AI Agent Automation
 
-**AI Agent Automation Platform** is an open-source, backend-first **AI workflow automation system** for building, running, and scheduling intelligent agent-driven pipelines — fully local, secure, and production-oriented.
+**Open-source, local-first workflow engine for AI agents**
 
-This project is designed as a **real execution engine**, not a demo or prompt playground. It enables developers to orchestrate autonomous AI agents, automate backend workflows, run tasks on schedules, and inspect executions with full observability.
+Build, run, schedule, and debug multi-step AI agent workflows  
+with **full observability** and **zero vendor lock-in**.
 
-**⚠️ This project is under active development.**
-
-[Run Locally](https://github.com/vmDeshpande/ai-agent-automation#-local-development)
-
-
----
-
-## 🔍 What Is AI Agent Automation Platform?
-
-AI Agent Automation Platform is a **self-hosted alternative to tools like n8n or Zapier**, purpose-built for AI-driven automation. Everything runs locally or on your own infrastructure, ensuring **data privacy, security, and full control**.
-
-Key ideas:
-
-* Autonomous AI agents
-* Deterministic workflow execution
-* Secure local data processing
-* Developer-friendly architecture
 
 ---
 
 > [!TIP]
-> Starring this repo helps more developers discover AI Agent Automation
+> ⭐ Starring this repo helps more developers discover **AI Agent Automation**
 >
-> ![gif](repo.gif)
-> 
-
-## 🚀 Key Features
-
-### 🤖 Agent-Based Workflow Execution
-
-* Step-by-step deterministic execution
-* Pluggable LLM adapter (OpenAI, Gemini, Groq, HuggingFace, etc.)
-* Structured inputs & outputs per step
-* Centralized executor with safety guards
-* Step-level success and failure tracking
-
-### 🔁 Workflow Automation Engine
-
-* Visual workflow pipeline UI
-* Workflows defined as ordered steps
-* Supported step types:
-
-  * LLM reasoning
-  * HTTP requests
-  * Email automation
-  * File read / write / append
-  * Browser automation (sandboxed)
-  * Delay & control steps
-
-### ⏱ Scheduler (Cron-Based Automation)
-
-* Cron-style scheduling
-* Automatic task generation
-* Supports recurring and long-running workflows
-* Ideal for monitoring, reporting, and background automation
-
-### 📄 Document Chat (Local & Free)
-
-* Upload PDF documents
-* Text extraction and semantic chunking
-* Custom local vector store (no paid embedding APIs)
-* Context-grounded answers only
-* No hallucinations by design
-
-### 📊 Observability & Logs
-
-* Task lifecycle tracking
-* Step-level execution logs
-* Timestamped results
-* Real-time log viewer UI
-
-### 🧠 Agent Memory (In Progress)
-
-* Persistent memory per agent
-* Store facts, preferences, and prior context
-* Enables adaptive and personalized automation
+> ![AI Agent Automation Demo](repo.gif)
 
 ---
 
-## 🏗 System Architecture
+## 🧠 What This Project Is
+
+**AI Agent Automation Platform** is a **production-oriented execution engine** for AI-driven workflows.
+
+This is **not**:
+
+* A prompt playground
+* A chat UI demo
+* A SaaS-locked automation tool
+
+This **is**:
+
+* A real workflow engine
+* Deterministic step execution
+* Agent-driven automation
+* Fully local & self-hosted
+
+If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want **AI-native, local, and inspectable execution**, this project is for you.
+
+---
+
+## ✨ Core Capabilities
+
+### 🤖 Agent-Driven Execution
+
+* Autonomous AI agents execute workflows
+* Pluggable LLM support (OpenAI, Gemini, Groq, local models)
+* Deterministic, step-by-step execution
+* Explicit inputs & outputs per step
+* Step-level success / failure tracking
+
+---
+
+### 🔗 Workflow Automation
+
+* Visual workflow builder
+* Ordered, sequential steps
+* Supported step types:
+
+  * **LLM** (reasoning & generation)
+  * **HTTP** (API calls)
+  * **Tool** (internal actions)
+  * **Delay** (time-based control)
+
+Each workflow execution becomes a **Task** with full traceability.
+
+---
+
+### ⏱ Schedules (Cron Automation)
+
+* Cron-based scheduling
+* Automatic task creation
+* Ideal for:
+
+  * Monitoring
+  * Reports
+  * Background automation
+  * Periodic data sync
+
+---
+
+### 📊 Observability & Debugging
+
+* Task execution timeline
+* Step-level outputs & errors
+* Real-time system logs
+* Clear failure attribution
+* Designed for **root-cause analysis**, not guesswork
+
+---
+
+### 🧠 Agent Memory *(In Progress)*
+
+* Persistent memory per agent
+* Store learned facts & system knowledge
+* Enables adaptive workflows over time
+
+---
+
+## 🏗 High-Level Architecture
 
 ```
-Frontend (Next.js + React)
-        ↓
-REST API (Express.js)
-        ↓
+Frontend (Next.js)
+      ↓
+REST API (Express)
+      ↓
 Workflow Engine
-        ├── Agent Runner
-        ├── Step Executor
-        ├── Tool Registry
-        ├── Scheduler
-        └── Logger
-        ↓
-MongoDB (Tasks, Workflows, Logs, Agents)
+  ├─ Agent Runner
+  ├─ Step Executor
+  ├─ Tool Registry
+  ├─ Scheduler
+  └─ Logger
+      ↓
+MongoDB (Workflows, Tasks, Agents, Logs)
 ```
 
-This architecture enables:
+**Design goals:**
 
 * Clear execution boundaries
-* Horizontal scalability
-* Secure tool execution
 * Full auditability
+* Safe tool execution
+* Easy extension
 
 ---
 
 ## 🛠 Tech Stack
 
-### Backend
+**Backend**
 
-* Node.js
-* Express.js
+* Node.js + Express
 * MongoDB
-* PM2
 * Cron Scheduler
-* Custom Agent Runner
+* Custom Agent Runtime
 
-### Frontend
+**Frontend**
 
 * Next.js
 * React
 * Tailwind CSS
-* DaisyUI
 
-### AI & Automation
+**AI & Automation**
 
 * Pluggable LLM adapters
-* Custom execution pipeline
 * Tool sandboxing
-* Local vector store
+* Local-first execution
 
 ---
 
-## 🧪 Use Cases
+## 🧪 Common Use Cases
 
-* AI-powered workflow automation
-* Scheduled reporting agents
-* Backend task automation
-* Intelligent document analysis
+* AI workflow automation
+* Scheduled backend jobs
+* Monitoring & alerting agents
+* Document processing pipelines
 * Internal developer tools
-* Secure AI experimentation platform
+* Secure AI experimentation
 
 ---
 
-## 🔒 Security & Privacy
+## 🔐 Security & Privacy
 
-* Fully self-hosted (local or private cloud)
+* Fully self-hosted
 * No data leaves your system by default
-* Secrets stored only in environment variables
-* Sandboxed tool execution
+* Secrets via environment variables only
 * No vendor lock-in
+* No hidden SaaS dependencies
 
 ---
 
-## 🏁 Local Development
+## 🚀 Local Development
 
-### 1️⃣ Clone the Repository
+### 1️⃣ Clone
 
 ```bash
-git clone https://github.com/vmdeshpande/ai-agent-automation.git
+git clone https://github.com/vmDeshpande/ai-agent-automation.git
 cd ai-agent-automation
 ```
 
-### 2️⃣ Backend Setup
+### 2️⃣ Backend
 
 ```bash
 cd backend
@@ -176,9 +183,9 @@ npm run dev
 npm run worker
 ```
 
-Backend runs at: `http://localhost:5000`
+Backend → `http://localhost:5000`
 
-### 3️⃣ Frontend Setup
+### 3️⃣ Frontend
 
 ```bash
 cd frontend
@@ -186,7 +193,7 @@ npm install
 npm run dev
 ```
 
-Frontend runs at: `http://localhost:3000`
+Frontend → `http://localhost:3000`
 
 ---
 
@@ -194,61 +201,54 @@ Frontend runs at: `http://localhost:3000`
 
 ```
 backend/
-  ├── agents/
-  ├── controllers/
-  ├── routes/
-  ├── services/
-  ├── models/
-  ├── tools/
-  └── app.js
+  ├─ agents/
+  ├─ models/
+  ├─ routes/
+  ├─ services/
+  ├─ tools/
+  └─ workers/
 
 frontend/
-  ├── app/
-  ├── components/
-  ├── dashboard/
-  └── styles/
+  ├─ app/
+  ├─ components/
+  ├─ context/
+  └─ styles/
 ```
 
 ---
 
-## 🛣 Roadmap
+## 🛣 Roadmap (Short-Term)
 
-* OCR support for scanned PDFs
-* Public REST API for workflows
-* Agent memory expansion
-* Real-time updates (WebSockets)
+* WebSocket-based live updates
 * Plugin-based tool system
+* Advanced agent memory
+* Public workflow API
 * Role-based access control
-
----
-
-### Versioning
-
-- This project follows semantic versioning.
-- Current version: **v0.1.0** (pre-1.0, APIs may change)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome!
+Contributions are welcome.
 
-If you’re interested in AI agents, workflow automation, backend systems, or developer tooling, feel free to contribute.
+If you enjoy:
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+* AI agents
+* Backend systems
+* Automation engines
+* Developer tooling
+
+You’ll feel at home here.
+
+See **CONTRIBUTING.md** for details.
 
 ---
 
 ## 📄 License
 
-Licensed under the **Apache License 2.0**.
-
-See the [LICENSE](./LICENSE) file for details.
+Apache License 2.0
 
 ---
 
-## 💡 Philosophy
-
-> This is not a prompt playground.
->
-> This is a production-grade AI execution engine.
+> **Not a prompt playground.**
+> **A real AI execution engine.**
