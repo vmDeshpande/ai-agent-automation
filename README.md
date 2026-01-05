@@ -240,7 +240,7 @@ If you enjoy:
 
 You’ll feel at home here.
 
-See **CONTRIBUTING.md** for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ---
 
