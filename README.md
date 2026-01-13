@@ -1,10 +1,8 @@
 # ⚡ AI Agent Automation
 
-**Open-source, local-first workflow engine for AI agents**
+**Developer-first, local-first workflow engine for AI agents**
 
-Build, run, schedule, and debug multi-step AI agent workflows  
-with **full observability** and **zero vendor lock-in**.
-
+Build, run, schedule, and debug **multi-step AI agent workflows** with **full observability**, **deterministic execution**, and **zero vendor lock-in**.
 
 ---
 
@@ -15,24 +13,50 @@ with **full observability** and **zero vendor lock-in**.
 
 ---
 
+## ⚙️ How It Works
+
+1. You create a **Workflow** made of ordered steps (**LLM**, **HTTP**, **Tool**, **Delay**)
+2. Running a workflow creates a **Task** (manual or scheduled)
+3. An **Agent** executes each step **deterministically**
+4. Every step produces:
+
+   * input
+   * output
+   * success / failure
+5. You inspect, debug, re-run, and automate with **full visibility**
+
+---
+
 ## 🧠 What This Project Is
 
-**AI Agent Automation Platform** is a **production-oriented execution engine** for AI-driven workflows.
+**AI Agent Automation Platform** is a **developer-first execution engine** for AI-driven workflows.
 
 This is **not**:
 
 * A prompt playground
-* A chat UI demo
+* A chatbot UI demo
 * A SaaS-locked automation tool
 
 This **is**:
 
 * A real workflow engine
-* Deterministic step execution
+* Deterministic, step-by-step execution
 * Agent-driven automation
 * Fully local & self-hosted
 
-If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want **AI-native, local, and inspectable execution**, this project is for you.
+If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want something **AI-native**, **local**, and **inspectable**, this project is for you.
+
+---
+
+## 👤 Who This Is For
+
+✔ Developers building AI-driven automation
+✔ Teams needing inspectable, debuggable execution
+✔ Privacy-conscious & self-hosted setups
+
+❌ Chatbot-only demos
+❌ Prompt-only experiments
+❌ No-code SaaS users
 
 ---
 
@@ -42,7 +66,7 @@ If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want **AI
 
 * Autonomous AI agents execute workflows
 * Pluggable LLM support (OpenAI, Gemini, Groq, local models)
-* Deterministic, step-by-step execution
+* Deterministic execution model
 * Explicit inputs & outputs per step
 * Step-level success / failure tracking
 
@@ -54,18 +78,18 @@ If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want **AI
 * Ordered, sequential steps
 * Supported step types:
 
-  * **LLM** (reasoning & generation)
-  * **HTTP** (API calls)
-  * **Tool** (internal actions)
-  * **Delay** (time-based control)
+  * **LLM** — reasoning & generation
+  * **HTTP** — API calls
+  * **Tool** — internal actions
+  * **Delay** — time-based control
 
-Each workflow execution becomes a **Task** with full traceability.
+Each workflow run becomes a **Task** with full traceability.
 
 ---
 
-### ⏱ Schedules (Cron Automation)
+### ⏱ Scheduling (Cron Automation)
 
-* Cron-based scheduling
+* Cron-based schedules
 * Automatic task creation
 * Ideal for:
 
@@ -82,7 +106,7 @@ Each workflow execution becomes a **Task** with full traceability.
 * Step-level outputs & errors
 * Real-time system logs
 * Clear failure attribution
-* Designed for **root-cause analysis**, not guesswork
+* Built for **root-cause analysis**, not guesswork
 
 ---
 
@@ -94,7 +118,7 @@ Each workflow execution becomes a **Task** with full traceability.
 
 ---
 
-## 🏗 High-Level Architecture
+## 🏗 High-Level Architecture (Simplified)
 
 ```
 Frontend (Next.js)
@@ -111,12 +135,8 @@ Workflow Engine
 MongoDB (Workflows, Tasks, Agents, Logs)
 ```
 
-**Design goals:**
-
-* Clear execution boundaries
-* Full auditability
-* Safe tool execution
-* Easy extension
+> 📘 Detailed architecture, execution model, and internals:
+> [https://vmdeshpande.github.io/ai-automation-platform-website/](https://vmdeshpande.github.io/ai-automation-platform-website/)
 
 ---
 
@@ -217,13 +237,11 @@ frontend/
 
 ---
 
-## 🛣 Roadmap (Short-Term)
+## 🛣 Roadmap
 
-* WebSocket-based live updates
-* Plugin-based tool system
-* Advanced agent memory
-* Public workflow API
-* Role-based access control
+Planned features and long-term vision live on the project website:
+
+👉 [https://vmdeshpande.github.io/ai-automation-platform-website/](https://vmdeshpande.github.io/ai-automation-platform-website/)
 
 ---
 

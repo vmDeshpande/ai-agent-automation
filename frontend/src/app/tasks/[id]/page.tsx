@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
+import { useApi } from "@/hooks/useApi";
 import {
   CheckCircle2,
   XCircle,
@@ -119,11 +120,10 @@ function renderStepOutput(output: StepOutput) {
 export default function TaskDetailPage() {
   const [agent, setAgent] = useState<Agent | null>(null);
 
-  const { id } = useParams();
   const router = useRouter();
+  const { id } = useParams();
 
-  const [task, setTask] = useState<Task | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: task, loading, refetch } = useApi<Task>(`/tasks/${id}`);
 
   const { setContext, clearContext } = useAssistantContext();
 
@@ -142,22 +142,6 @@ export default function TaskDetailPage() {
     }
   }
 
-  async function fetchTask() {
-    try {
-      const res = await fetch(`http://localhost:5000/api/tasks/${id}`, {
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
-        },
-      });
-      const data = await res.json();
-      if (data.ok) setTask(data.task);
-    } catch (err) {
-      console.error("Error fetching task:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function fetchAgent(agentId: string) {
     if (!agentId) return;
 
@@ -169,17 +153,11 @@ export default function TaskDetailPage() {
       });
 
       const data = await res.json();
-      console.log("Fetched agent data:", data);
       if (data.ok) setAgent(data.agent);
     } catch (err) {
       console.error("Failed to fetch agent", err);
     }
   }
-
-  // Initial load
-  useEffect(() => {
-    fetchTask();
-  }, [id]);
 
   useEffect(() => {
     if (task?.agentId) {
@@ -192,9 +170,13 @@ export default function TaskDetailPage() {
     if (!task) return;
     if (["completed", "failed"].includes(task.status)) return;
 
-    const interval = setInterval(fetchTask, 2000);
+    const interval = setInterval(() => {
+      refetch();
+      // refetch({ silent: true });
+    }, 2000);
+
     return () => clearInterval(interval);
-  }, [task?.status]);
+  }, [task?.status, refetch]);
 
   useEffect(() => {
     if (!task) return;
@@ -210,7 +192,6 @@ export default function TaskDetailPage() {
         type: result.type,
         success: result.success,
         outputSummary: summarizeOutput(result.output),
-        rawOutput: result.output,
       };
     });
 
@@ -219,17 +200,14 @@ export default function TaskDetailPage() {
     setContext({
       page: "task-detail",
 
-      /* ---- Task ---- */
       taskId: task._id,
       taskName: task.name,
       taskStatus: task.status,
       workflowId: task.workflowId,
 
-      /* ---- Agent ---- */
       agentName: agent?.name,
       model: agent?.config?.model,
 
-      /* ---- Failure awareness ---- */
       failedStep: failedStep
         ? {
             stepId: failedStep.stepId,
@@ -239,13 +217,11 @@ export default function TaskDetailPage() {
           }
         : undefined,
 
-      /* ---- Human readable status ---- */
       status:
         task.status === "failed"
           ? `Failed at step "${failedStep?.name ?? "unknown"}"`
           : task.status,
 
-      /* ---- Timeline ---- */
       recentActivity: summarizedSteps.map((s) => ({
         type: "task",
         name: s.name,
@@ -254,11 +230,7 @@ export default function TaskDetailPage() {
 
       logScope: "task",
     });
-
-    return () => {
-      clearContext();
-    };
-  }, [task, agent]);
+  }, [task?._id, task?.status, task?.stepResults?.length, agent?._id]);
 
   if (loading) return <p>Loading task...</p>;
   if (!task) return <p>Task not found.</p>;

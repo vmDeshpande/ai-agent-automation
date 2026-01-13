@@ -1,25 +1,107 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Activity, Workflow, ListChecks, Bot, Calendar } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
+import { useApi } from "@/hooks/useApi";
+
+/* -----------------------------
+   Types
+------------------------------ */
+
+type DashboardStats = {
+  workflows: number;
+  tasks: number;
+  runningTasks: number;
+  agents: number;
+  schedules: number;
+};
+
+type Task = {
+  _id: string;
+  name: string;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt: string;
+  metadata?: {
+    runningBy?: string;
+  };
+};
+
+/* -----------------------------
+   Skeleton
+------------------------------ */
+
+function StatSkeleton() {
+  return (
+    <Card className="p-6 animate-pulse">
+      <div className="h-10 w-10 rounded-lg bg-muted" />
+      <div className="mt-4 space-y-2">
+        <div className="h-8 w-20 rounded bg-muted" />
+        <div className="h-4 w-24 rounded bg-muted" />
+      </div>
+    </Card>
+  );
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="flex items-center justify-between rounded-lg border p-4 animate-pulse">
+      <div className="flex items-center gap-4">
+        <div className="h-6 w-16 rounded bg-muted" />
+        <div className="space-y-2">
+          <div className="h-4 w-32 rounded bg-muted" />
+          <div className="h-3 w-24 rounded bg-muted" />
+        </div>
+      </div>
+      <div className="h-3 w-16 rounded bg-muted" />
+    </div>
+  );
+}
+
+/* -----------------------------
+   Page
+------------------------------ */
 
 function DashboardPageInner() {
-  const [stats, setStats] = useState<{
-    workflows: number;
-    tasks: number;
-    runningTasks: number;
-    agents: number;
-    schedules: number;
-  } | null>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const { setContext, clearContext } = useAssistantContext();
 
+  const { data: stats, loading: statsLoading } =
+    useApi<DashboardStats>("/dashboard/stats");
+
+  const { data: tasks, loading: tasksLoading } =
+  useApi<Task[]>("/tasks");
+
+  const recentTasks = tasks?.slice(0, 8) ?? [];
+  console.log("statsLoading: ", statsLoading);
+  console.log("stats: ", stats);
+  console.log("tasksData: ", recentTasks);
+
+  /* -----------------------------
+     Assistant context
+  ------------------------------ */
+  useEffect(() => {
+    if (!stats || statsLoading) return;
+
+    setContext({
+      page: "dashboard",
+      dashboardStats: stats,
+      recentActivity: recentTasks.slice(0, 5).map((task) => ({
+        type: "task",
+        name: task.name,
+        status: task.status,
+      })),
+    });
+
+    return () => clearContext();
+  }, [stats, recentTasks.length, statsLoading]);
+
+  /* -----------------------------
+     Helpers
+  ------------------------------ */
   function timeAgo(dateString: string) {
     const diff = Date.now() - new Date(dateString).getTime();
     const minutes = Math.floor(diff / 60000);
@@ -34,59 +116,7 @@ function DashboardPageInner() {
     return `${days} day${days > 1 ? "s" : ""} ago`;
   }
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`http://localhost:5000/api/dashboard/stats`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      }).then((res) => res.json()),
-
-      fetch(`http://localhost:5000/api/tasks`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      }).then((res) => res.json()),
-    ])
-      .then(([statsRes, taskRes]) => {
-        setStats(statsRes.stats);
-        setTasks(taskRes.tasks.slice(0, 8));
-        console.log(taskRes.tasks);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  const statsUI = [
-    {
-      label: "Total Workflows",
-      value: `${stats?.workflows || 0}`,
-      icon: Workflow,
-      change: "+3 this week",
-    },
-    {
-      label: "Total Tasks",
-      value: `${stats?.tasks || 0}`,
-      icon: ListChecks,
-      change: "+127 this week",
-    },
-    {
-      label: "Running Tasks",
-      value: `${stats?.runningTasks || 0}`,
-      icon: Activity,
-      change: "Active now",
-    },
-    {
-      label: "Active Agents",
-      value: `${stats?.agents || 0}`,
-      icon: Bot,
-      change: "3 idle",
-    },
-    {
-      label: "Schedules",
-      value: `${stats?.schedules || 0}`,
-      icon: Calendar,
-      change: "4 upcoming",
-    },
-  ];
-
-  function getStatusColor(status: string) {
+  function getStatusColor(status: Task["status"]) {
     switch (status) {
       case "completed":
         return "bg-success/20 text-success border-success/30";
@@ -99,35 +129,21 @@ function DashboardPageInner() {
     }
   }
 
-  useEffect(() => {
-    if (!stats) return;
+  const statsUI = [
+    { label: "Total Workflows", value: stats?.workflows ?? 0, icon: Workflow },
+    { label: "Total Tasks", value: stats?.tasks ?? 0, icon: ListChecks },
+    { label: "Running Tasks", value: stats?.runningTasks ?? 0, icon: Activity },
+    { label: "Active Agents", value: stats?.agents ?? 0, icon: Bot },
+    { label: "Schedules", value: stats?.schedules ?? 0, icon: Calendar },
+  ];
 
-    setContext({
-      page: "dashboard",
-
-      dashboardStats: {
-        workflows: stats.workflows,
-        tasks: stats.tasks,
-        runningTasks: stats.runningTasks,
-        agents: stats.agents,
-        schedules: stats.schedules,
-      },
-
-      recentActivity: tasks.slice(0, 5).map((task) => ({
-        type: "task",
-        name: task.name,
-        status: task.status,
-      })),
-    });
-
-    return () => {
-      clearContext();
-    };
-  }, [stats, tasks]);
-
+  /* -----------------------------
+     UI
+  ------------------------------ */
   return (
     <div className="flex min-h-screen">
       <AppSidebar />
+
       <main
         className="flex-1 transition-[padding] duration-300"
         style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
@@ -139,46 +155,41 @@ function DashboardPageInner() {
               Overview of your AI automation workflows
             </p>
           </div>
-          {loading ? (
-            <p className="opacity-70">Loading workflows...</p>
-          ) : (
-            <>
-              <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5">
-                {statsUI.map((stat) => (
-                  <Card key={stat.label} className="p-6">
-                    <div className="flex items-start justify-between">
+          <>
+            {/* Stats */}
+            <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5">
+              {stats
+                ? statsUI.map((stat) => (
+                    <Card key={stat.label} className="p-6">
                       <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
                         <stat.icon className="size-5 text-primary" />
                       </div>
-                    </div>
-                    <div className="mt-4">
-                      <p className="text-3xl font-bold">{stat.value}</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">
-                        {stat.label}
-                      </p>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {stat.change}
-                      </p>
-                    </div>
-                  </Card>
-                ))}
-              </div>
 
-              <Card className="p-6">
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold">Recent Activity</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Latest workflow executions
-                    </p>
-                  </div>
-                </div>
+                      <div className="mt-4">
+                        <p className="text-3xl font-bold">{stat.value}</p>
+                        <p className="mt-1 text-sm font-medium">{stat.label}</p>
+                      </div>
+                    </Card>
+                  ))
+                : Array.from({ length: 5 }).map((_, i) => (
+                    <StatSkeleton key={i} />
+                  ))}
+            </div>
 
-                <div className="space-y-3">
-                  {tasks.map((task) => (
+            {/* Recent Activity */}
+            <Card className="p-6">
+              <h2 className="mb-4 text-xl font-semibold">Recent Activity</h2>
+
+              <div className="space-y-3">
+                {tasksLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <ActivitySkeleton key={i} />
+                  ))
+                ) : recentTasks.length > 0 ? (
+                  recentTasks.map((task) => (
                     <div
                       key={task._id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
+                      className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-accent/50"
                     >
                       <div className="flex items-center gap-4">
                         <Badge className={getStatusColor(task.status)}>
@@ -197,11 +208,15 @@ function DashboardPageInner() {
                         {timeAgo(task.startedAt)}
                       </span>
                     </div>
-                  ))}
-                </div>
-              </Card>
-            </>
-          )}
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground opacity-70">
+                    No recent activity
+                  </p>
+                )}
+              </div>
+            </Card>
+          </>
         </div>
       </main>
     </div>

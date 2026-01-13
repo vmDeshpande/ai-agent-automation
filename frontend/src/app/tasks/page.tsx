@@ -51,6 +51,35 @@ function getStatusColor(status: string) {
   }
 }
 
+/* -----------------------------
+   Skeletons
+------------------------------ */
+
+function TableRowSkeleton() {
+  return (
+    <tr className="border-b border-border animate-pulse">
+      <td className="p-4">
+        <div className="h-4 w-32 rounded bg-muted" />
+      </td>
+      <td className="p-4">
+        <div className="h-4 w-40 rounded bg-muted" />
+      </td>
+      <td className="p-4">
+        <div className="h-6 w-20 rounded bg-muted" />
+      </td>
+      <td className="p-4">
+        <div className="h-4 w-16 rounded bg-muted" />
+      </td>
+      <td className="p-4">
+        <div className="h-4 w-32 rounded bg-muted" />
+      </td>
+      <td className="p-4">
+        <div className="h-8 w-8 rounded bg-muted" />
+      </td>
+    </tr>
+  );
+}
+
 export default function TasksPage() {
   const router = useRouter();
 
@@ -201,55 +230,70 @@ export default function TasksPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTasks.map((task) => {
-                      const totalSteps = task.metadata?.steps?.length ?? 0;
-                      const executedSteps = task.stepResults?.length ?? 0;
+                    {loading ? (
+                      Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                        <TableRowSkeleton key={i} />
+                      ))
+                    ) : filteredTasks.length > 0 ? (
+                      filteredTasks.map((task) => {
+                        const totalSteps = task.metadata?.steps?.length ?? 0;
+                        const executedSteps = task.stepResults?.length ?? 0;
 
-                      return (
-                        <tr
-                          key={task._id}
-                          className="border-b border-border transition-colors hover:bg-accent/50"
+                        return (
+                          <tr
+                            key={task._id}
+                            className="border-b border-border transition-colors hover:bg-accent/50"
+                          >
+                            <td className="p-4">
+                              <Link
+                                href={`/tasks/${task._id}`}
+                                className="font-mono text-sm text-primary hover:underline"
+                              >
+                                {task.name}
+                              </Link>
+                            </td>
+
+                            <td className="p-4 text-sm text-muted-foreground">
+                              {task.workflowId ?? "—"}
+                            </td>
+
+                            <td className="p-4">
+                              <Badge className={getStatusColor(task.status)}>
+                                {task.status}
+                              </Badge>
+                            </td>
+
+                            <td className="p-4 text-sm text-muted-foreground">
+                              {executedSteps}/{totalSteps}
+                            </td>
+
+                            <td className="p-4 text-sm text-muted-foreground">
+                              {new Date(task.createdAt).toLocaleString()}
+                            </td>
+
+                            <td className="p-4">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-destructive"
+                                onClick={() => deleteTask(task._id)}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-6 text-center text-sm text-muted-foreground"
                         >
-                          <td className="p-4">
-                            <Link
-                              href={`/tasks/${task._id}`}
-                              className="font-mono text-sm text-primary hover:underline"
-                            >
-                              {task.name}
-                            </Link>
-                          </td>
-
-                          <td className="p-4 text-sm text-muted-foreground">
-                            {task.workflowId ?? "—"}
-                          </td>
-
-                          <td className="p-4">
-                            <Badge className={getStatusColor(task.status)}>
-                              {task.status}
-                            </Badge>
-                          </td>
-
-                          <td className="p-4 text-sm text-muted-foreground">
-                            {executedSteps}/{totalSteps}
-                          </td>
-
-                          <td className="p-4 text-sm text-muted-foreground">
-                            {new Date(task.createdAt).toLocaleString()}
-                          </td>
-
-                          <td className="p-4">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 text-destructive"
-                              onClick={() => deleteTask(task._id)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          No tasks found
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
