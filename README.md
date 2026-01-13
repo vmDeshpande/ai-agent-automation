@@ -1,8 +1,25 @@
-# ⚡ AI Agent Automation
+<h1 align="center">⚡ AI Agent Automation</h1>
 
-**Developer-first, local-first workflow engine for AI agents**
+<p align="center">
+  <strong>Open-source, local-first workflow execution engine for AI agents</strong>
+</p>
 
-Build, run, schedule, and debug **multi-step AI agent workflows** with **full observability**, **deterministic execution**, and **zero vendor lock-in**.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" /></a>
+  <img src="https://img.shields.io/badge/status-active-success" />
+  <img src="https://img.shields.io/badge/execution-deterministic-blue" />
+  <img src="https://img.shields.io/badge/local--first-yes-important" /> <br />
+  <img src="https://img.shields.io/github/last-commit/vmDeshpande/ai-agent-automation" />
+<img src="https://img.shields.io/github/commit-activity/m/vmDeshpande/ai-agent-automation" />
+<img src="https://img.shields.io/github/stars/vmDeshpande/ai-agent-automation?style=social" />
+</p>
+
+<p align="center">
+  <a href="https://vmdeshpande.github.io/ai-automation-platform-website/docs">Documentation</a> ·
+  <a href="https://vmdeshpande.github.io/ai-automation-platform-website/features/">Features</a> ·
+  <a href="https://vmdeshpande.github.io/ai-automation-platform-website/architecture/">Architecture</a> ·
+  <a href="https://github.com/vmDeshpande/ai-agent-automation/issues">Issues</a>
+</p>
 
 ---
 
@@ -20,9 +37,10 @@ Build, run, schedule, and debug **multi-step AI agent workflows** with **full ob
 3. An **Agent** executes each step **deterministically**
 4. Every step produces:
 
-   * input
-   * output
-   * success / failure
+   - input
+   - output
+   - success / failure
+
 5. You inspect, debug, re-run, and automate with **full visibility**
 
 ---
@@ -33,16 +51,16 @@ Build, run, schedule, and debug **multi-step AI agent workflows** with **full ob
 
 This is **not**:
 
-* A prompt playground
-* A chatbot UI demo
-* A SaaS-locked automation tool
+- A prompt playground
+- A chatbot UI demo
+- A SaaS-locked automation tool
 
 This **is**:
 
-* A real workflow engine
-* Deterministic, step-by-step execution
-* Agent-driven automation
-* Fully local & self-hosted
+- A real workflow engine
+- Deterministic, step-by-step execution
+- Agent-driven automation
+- Fully local & self-hosted
 
 If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want something **AI-native**, **local**, and **inspectable**, this project is for you.
 
@@ -64,24 +82,24 @@ If you like tools such as **n8n**, **Zapier**, or **Temporal** — but want some
 
 ### 🤖 Agent-Driven Execution
 
-* Autonomous AI agents execute workflows
-* Pluggable LLM support (OpenAI, Gemini, Groq, local models)
-* Deterministic execution model
-* Explicit inputs & outputs per step
-* Step-level success / failure tracking
+- Autonomous AI agents execute workflows
+- Pluggable LLM support (OpenAI, Gemini, Groq, local models)
+- Deterministic execution model
+- Explicit inputs & outputs per step
+- Step-level success / failure tracking
 
 ---
 
 ### 🔗 Workflow Automation
 
-* Visual workflow builder
-* Ordered, sequential steps
-* Supported step types:
+- Visual workflow builder
+- Ordered, sequential steps
+- Supported step types:
 
-  * **LLM** — reasoning & generation
-  * **HTTP** — API calls
-  * **Tool** — internal actions
-  * **Delay** — time-based control
+  - **LLM** — reasoning & generation
+  - **HTTP** — API calls
+  - **Tool** — internal actions
+  - **Delay** — time-based control
 
 Each workflow run becomes a **Task** with full traceability.
 
@@ -89,32 +107,32 @@ Each workflow run becomes a **Task** with full traceability.
 
 ### ⏱ Scheduling (Cron Automation)
 
-* Cron-based schedules
-* Automatic task creation
-* Ideal for:
+- Cron-based schedules
+- Automatic task creation
+- Ideal for:
 
-  * Monitoring
-  * Reports
-  * Background automation
-  * Periodic data sync
+  - Monitoring
+  - Reports
+  - Background automation
+  - Periodic data sync
 
 ---
 
 ### 📊 Observability & Debugging
 
-* Task execution timeline
-* Step-level outputs & errors
-* Real-time system logs
-* Clear failure attribution
-* Built for **root-cause analysis**, not guesswork
+- Task execution timeline
+- Step-level outputs & errors
+- Real-time system logs
+- Clear failure attribution
+- Built for **root-cause analysis**, not guesswork
 
 ---
 
-### 🧠 Agent Memory *(In Progress)*
+### 🧠 Agent Memory _(In Progress)_
 
-* Persistent memory per agent
-* Store learned facts & system knowledge
-* Enables adaptive workflows over time
+- Persistent memory per agent
+- Store learned facts & system knowledge
+- Enables adaptive workflows over time
 
 ---
 
@@ -144,43 +162,43 @@ MongoDB (Workflows, Tasks, Agents, Logs)
 
 **Backend**
 
-* Node.js + Express
-* MongoDB
-* Cron Scheduler
-* Custom Agent Runtime
+- Node.js + Express
+- MongoDB
+- Cron Scheduler
+- Custom Agent Runtime
 
 **Frontend**
 
-* Next.js
-* React
-* Tailwind CSS
+- Next.js
+- React
+- Tailwind CSS
 
 **AI & Automation**
 
-* Pluggable LLM adapters
-* Tool sandboxing
-* Local-first execution
+- Pluggable LLM adapters
+- Tool sandboxing
+- Local-first execution
 
 ---
 
 ## 🧪 Common Use Cases
 
-* AI workflow automation
-* Scheduled backend jobs
-* Monitoring & alerting agents
-* Document processing pipelines
-* Internal developer tools
-* Secure AI experimentation
+- AI workflow automation
+- Scheduled backend jobs
+- Monitoring & alerting agents
+- Document processing pipelines
+- Internal developer tools
+- Secure AI experimentation
 
 ---
 
 ## 🔐 Security & Privacy
 
-* Fully self-hosted
-* No data leaves your system by default
-* Secrets via environment variables only
-* No vendor lock-in
-* No hidden SaaS dependencies
+- Fully self-hosted
+- No data leaves your system by default
+- Secrets via environment variables only
+- No vendor lock-in
+- No hidden SaaS dependencies
 
 ---
 
@@ -251,10 +269,10 @@ Contributions are welcome.
 
 If you enjoy:
 
-* AI agents
-* Backend systems
-* Automation engines
-* Developer tooling
+- AI agents
+- Backend systems
+- Automation engines
+- Developer tooling
 
 You’ll feel at home here.
 
@@ -268,5 +286,4 @@ Apache License 2.0
 
 ---
 
-> **Not a prompt playground.**
-> **A real AI execution engine.**
+> **Not a prompt playground.** > **A real AI execution engine.**
