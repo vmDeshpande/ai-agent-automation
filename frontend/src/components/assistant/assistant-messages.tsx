@@ -7,50 +7,22 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { AssistantPlaceholder } from "./assistant-placeholder";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAssistantScroll } from "./hooks/use-assistant-scroll";
 import { useEffect, useRef, useState } from "react";
 
 export function AssistantMessages() {
   const { messages, mode } = useAssistantContext();
+  const { containerRef, bottomRef, autoScroll, scrollToBottom } =
+    useAssistantScroll<HTMLDivElement>();
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-
-  /* -------------------------------
-     Detect manual scroll
-  -------------------------------- */
-  useEffect(() => {
-  const container = containerRef.current;
-  if (!container) return;
-
-  const onScroll = () => {
-    // 🔒 extra safety — TS is happy now
-    if (!container) return;
-
-    const nearBottom =
-      container.scrollHeight -
-        container.scrollTop -
-        container.clientHeight <
-      120;
-
-    setAutoScroll(nearBottom);
-  };
-
-  container.addEventListener("scroll", onScroll);
-  return () => container.removeEventListener("scroll", onScroll);
-}, []);
-
-  /* -------------------------------
-     Auto scroll on new messages
-  -------------------------------- */
   useEffect(() => {
     if (!autoScroll) return;
 
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
+    // wait for DOM + animation
+    requestAnimationFrame(() => {
+      scrollToBottom(true);
     });
-  }, [messages, autoScroll]);
+  }, [messages.length, autoScroll, scrollToBottom]);
 
   /* -------------------------------
      Placeholder

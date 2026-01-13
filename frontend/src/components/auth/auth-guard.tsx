@@ -18,11 +18,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!loading && !token) {
       router.replace("/login");
     }
-  }, [loading, token, router]);
+  }, [loading, token]);
 
   // ⏳ Prevent UI flash
-  if (loading || !token) {
-    return null; // or loader
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+        Checking authentication…
+      </div>
+    );
+  }
+
+  if (!token) {
+    return null; // redirect already triggered
   }
 
   return <>{children}</>;

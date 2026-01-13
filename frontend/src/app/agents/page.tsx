@@ -32,6 +32,7 @@ type Agent = {
   name: string;
   description?: string;
   status?: "active" | "inactive";
+  workflows?: string;
   config?: {
     model?: string;
     temperature?: number;
@@ -220,7 +221,7 @@ export default function AgentsPage() {
                             <span className="text-muted-foreground">
                               Used in
                             </span>
-                            <span className="font-medium">2 workflows</span>
+                            <span className="font-medium">{agent.workflows ?? "—"}</span>
                           </div>
                         </div>
 
