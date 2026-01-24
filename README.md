@@ -18,7 +18,8 @@
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/docs">Documentation</a> ·
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/features/">Features</a> ·
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/architecture/">Architecture</a> ·
-  <a href="https://github.com/vmDeshpande/ai-agent-automation/issues">Issues</a>
+  <a href="https://github.com/vmDeshpande/ai-agent-automation/issues">Issues</a><br><br>
+<img src="https://img.shields.io/badge/Starting%20on%20next%20update-In%2031%20Days-0d1117?style=for-the-badge&logo=github" />
 </p>
 
 ---
