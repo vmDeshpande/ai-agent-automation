@@ -504,3 +504,181 @@ Apache License 2.0
 ---
 
 > **Not a prompt playground.** > **A real AI execution engine.**
+## ❓ Frequently Asked Questions (FAQ)
+
+### General
+
+**Q: What is AI Agent Automation?**
+
+A: AI Agent Automation is a developer-first, local-first workflow execution engine for AI agents. It provides deterministic, step-by-step execution with full visibility and debuggability. Unlike prompt playgrounds or chatbot demos, this is a real workflow engine built for production AI automation.
+
+**Q: How does this differ from n8n, Zapier, or Temporal?**
+
+A: AI Agent Automation is AI-native and local-first. While n8n/Zapier are general automation platforms (often SaaS-locked), and Temporal is a workflow orchestration engine, AI Agent Automation focuses specifically on AI agent-driven workflows with deterministic execution, step-level observability, and no external dependencies.
+
+**Q: Who is this project for?**
+
+A: This project is designed for:
+- Developers building AI-driven automation
+- Teams needing inspectable, debuggable execution
+- Privacy-conscious and self-hosted setups
+
+It's **not** for chatbot-only demos, prompt-only experiments, or no-code SaaS users.
+
+### Installation & Setup
+
+**Q: What are the prerequisites?**
+
+A: You need:
+- Node.js (v18+)
+- MongoDB
+- Docker Desktop (for containerized deployment)
+- LLM API keys (optional: OpenAI, Gemini, Groq, or local Ollama)
+
+**Q: How do I run it locally?**
+
+A: For local development:
+```bash
+# Backend
+cd backend && npm install && npm run dev && npm run worker
+
+# Frontend
+cd frontend && npm install && npm run dev
+```
+
+For Docker deployment:
+```bash
+cd infra
+cp .env.example .env
+docker compose up --build
+```
+
+**Q: What ports does the platform use?**
+
+A: Default ports:
+- Frontend: `3000`
+- Backend API: `5000`
+- MongoDB: `27017`
+
+You can override these in `infra/.env` if they conflict with existing services.
+
+### LLM Providers
+
+**Q: Which LLM providers are supported?**
+
+A: Supported providers:
+- OpenAI
+- Gemini
+- Groq
+- Hugging Face
+- Ollama (local models)
+
+Configure API keys in `infra/.env` or backend `.env`.
+
+**Q: Can I use local models?**
+
+A: Yes! Set `OLLAMA_HOST=http://host.docker.internal:11434` (or your Ollama endpoint) to use local models. No external API calls required.
+
+### Workflows & Tasks
+
+**Q: What is a Workflow?**
+
+A: A Workflow is a sequence of ordered steps. Supported step types:
+- **LLM** — reasoning and generation
+- **HTTP** — API calls
+- **Tool** — internal actions
+- **Delay** — time-based control
+
+Each workflow run creates a **Task** with full traceability.
+
+**Q: What is a Task?**
+
+A: A Task is a single execution of a Workflow. Tasks can be:
+- Manual (triggered by user)
+- Scheduled (via cron)
+- Automatically created by the scheduler
+
+Each Task shows step-level inputs, outputs, and success/failure status.
+
+**Q: How does scheduling work?**
+
+A: Use cron-based schedules for:
+- Monitoring
+- Reports
+- Background automation
+- Periodic data sync
+
+The scheduler automatically creates Tasks based on your cron configuration.
+
+### Memory & Observability
+
+**Q: What is Agent Semantic Memory?**
+
+A: Agents have persistent, agent-scoped semantic memory:
+- Embedding-based retrieval using cosine similarity
+- Similarity threshold filtering to prevent noise
+- Retention cap per agent
+- Token-safe prompt injection
+- No external vector DB required (stored in MongoDB)
+
+**Q: How do I debug a failed Task?**
+
+A: Check the observability features:
+- Task execution timeline
+- Step-level outputs and errors
+- Real-time system logs
+- Clear failure attribution
+
+Built for root-cause analysis, not guesswork.
+
+### Deployment & Security
+
+**Q: Is this self-hosted?**
+
+A: Yes! Fully self-hosted with:
+- No data leaving your system by default
+- Secrets via environment variables only
+- No vendor lock-in
+- No hidden SaaS dependencies
+- Local MongoDB storage
+
+**Q: Can I deploy behind nginx?**
+
+A: Yes. Configure nginx to proxy:
+```
+/api  → http://localhost:5000
+/     → http://localhost:3000
+```
+
+Adjust ports if you override `BACKEND_PORT` or `FRONTEND_PORT`.
+
+### Troubleshooting
+
+**Q: Port already in use?**
+
+A: Override in `infra/.env`:
+```bash
+MONGO_PORT=27018
+BACKEND_PORT=5001
+FRONTEND_PORT=3001
+```
+
+**Q: Backend unhealthy after startup?**
+
+A: Check logs:
+```bash
+docker compose logs -f backend mongo mongo-init-replica
+```
+
+If MongoDB has old replica set config, reset:
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
+**Q: Where can I get help?**
+
+A: Resources:
+- [Documentation](https://vmdeshpande.github.io/ai-automation-platform-website/docs)
+- [Architecture Guide](https://vmdeshpande.github.io/ai-automation-platform-website/architecture/)
+- [GitHub Issues](https://github.com/vmDeshpande/ai-agent-automation/issues)
