@@ -1,5 +1,72 @@
 const Workflow = require("../models/workflow.model");
 const Task = require("../models/task.model");
+const { randomUUID } = require("crypto");
+
+function normalizeWorkflowGraph(steps, edges) {
+  const usedStepIds = new Set();
+  const firstIdForIncomingId = new Map();
+
+  const normalizedSteps = steps.map((step) => {
+    const clean = { ...step };
+
+    delete clean.cases;
+    delete clean.defaultTarget;
+    delete clean.trueTarget;
+    delete clean.falseTarget;
+
+    const incomingId = String(clean.stepId || clean.id || "").trim();
+    let stepId = incomingId;
+
+    if (!stepId || usedStepIds.has(stepId)) {
+      stepId = randomUUID();
+    }
+
+    usedStepIds.add(stepId);
+    clean.stepId = stepId;
+
+    if (incomingId && !firstIdForIncomingId.has(incomingId)) {
+      firstIdForIncomingId.set(incomingId, stepId);
+    }
+
+    return clean;
+  });
+
+  const usedEdgeIds = new Set();
+  const normalizedEdges = (Array.isArray(edges) ? edges : [])
+    .map((edge) => {
+      const source =
+        firstIdForIncomingId.get(String(edge.source || "")) ||
+        String(edge.source || "");
+      const target =
+        firstIdForIncomingId.get(String(edge.target || "")) ||
+        String(edge.target || "");
+
+      if (!usedStepIds.has(source) || !usedStepIds.has(target)) {
+        return null;
+      }
+
+      let id = String(edge.id || "").trim();
+      if (!id || usedEdgeIds.has(id)) {
+        id = randomUUID();
+      }
+
+      usedEdgeIds.add(id);
+
+      return {
+        id,
+        source,
+        target,
+        label: edge.label || "",
+        condition: edge.condition || null,
+        caseValue: edge.caseValue || null,
+        animated: edge.animated ?? true,
+        style: edge.style || { strokeWidth: 2 },
+      };
+    })
+    .filter(Boolean);
+
+  return { steps: normalizedSteps, edges: normalizedEdges };
+}
 
 /** Create a new workflow */
 async function createWorkflow(req, res) {
@@ -197,35 +264,7 @@ async function updateWorkflowSteps(req, res) {
       return res.status(400).json({ error: "Invalid steps" });
     }
 
-    // 🔥 CLEAN STEPS (REMOVE LEGACY FIELDS)
-    steps = steps.map((s) => {
-      const clean = { ...s };
-
-      delete clean.cases;
-      delete clean.defaultTarget;
-      delete clean.trueTarget;
-      delete clean.falseTarget;
-
-      return clean;
-    });
-
-    // 🔥 VALIDATE EDGES
-    edges = Array.isArray(edges)
-      ? edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-
-        // 🔥 keep everything important
-        label: e.label || "",
-        condition: e.condition || null,
-        caseValue: e.caseValue || null,
-
-        // optional but good
-        animated: e.animated ?? true,
-        style: e.style || { strokeWidth: 2 },
-      }))
-      : [];
+    ({ steps, edges } = normalizeWorkflowGraph(steps, edges));
 
     workflow.metadata = workflow.metadata || {};
     workflow.metadata.steps = steps;
