@@ -222,54 +222,35 @@ export default function WorkflowDetailPage() {
     return "pending";
   }
 
-  /** Fetch workflow details */
+  /** Fetch workflow details - MOCKED FOR OFFLINE TESTING */
   async function fetchWorkflow() {
     try {
-      const res = await fetch(apiUrl(`/workflows/${id}`), {
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
-        },
-      });
-
-      const data = await res.json();
-      if (data.ok) {
-        const workflowData = data.workflow;
-
-        // Normalize task IDs
-        type TaskRef = string | { _id: string };
-        const normalizedTaskIds = (workflowData.tasks ?? []).map(
-          (t: TaskRef) => (typeof t === "string" ? t : t._id),
-        );
-
-        setWorkflow(workflowData);
-        const sortedTaskIds = [...normalizedTaskIds].reverse();
-        setTasks(sortedTaskIds);
-
-        // Fetch latest task details
-        if (sortedTaskIds.length > 0) {
-          const taskRes = await fetch(apiUrl(`/tasks/${sortedTaskIds[0]}`), {
-            headers: {
-              Authorization: "Bearer " + localStorage.getItem("token"),
-            },
-          });
-
-          const taskData = await taskRes.json();
-          if (taskData.ok) {
-            setLatestTask(taskData.task);
-          }
+      // Hardcoded pipeline layout data to run safely without MongoDB connected
+      const mockWorkflowData = {
+        _id: id as string,
+        name: "Test Automation Pipeline",
+        description: "Mock workflow pipeline for frontend testing",
+        status: "idle",
+        agentId: "",
+        tasks: [],
+        metadata: {
+          steps: [
+            { stepId: "step-1", type: "LLM", name: "Generate Content Piece", prompt: "Write modern marketing copies..." },
+            { stepId: "step-2", type: "Delay", name: "Execution Buffer Gate", seconds: 60 },
+            { stepId: "step-3", type: "Email", name: "Send Live Notification", to: "admin@example.com" }
+          ]
         }
+      };
 
-        // Set agent selected state
-        if (workflowData.agentId) {
-          setSelectedAgent(workflowData.agentId);
-        }
-      }
+      setWorkflow(mockWorkflowData);
+      setTasks([]);
     } catch (err) {
       console.error("Error fetching workflow:", err);
     } finally {
       setLoading(false);
     }
   }
+
   useEffect(() => {
     if (!workflow) return;
 
@@ -287,24 +268,21 @@ export default function WorkflowDetailPage() {
     return agentMap[agentId] ?? "Unknown agent";
   }
 
-  /** Fetch all agents */
+  /** Fetch all agents - MOCKED FOR OFFLINE TESTING */
   async function fetchAgents() {
     try {
-      const res = await fetch(apiUrl(`/agents`), {
-        headers: { Authorization: "Bearer " + localStorage.getItem("token") },
+      // Return simple mock agent array to prevent crashing layout components
+      const mockAgents = [
+        { _id: "agent-1", name: "Orchestrator Agent", config: { model: "gpt-4" } },
+        { _id: "agent-2", name: "Utility Support Agent", config: { model: "gpt-3.5" } }
+      ];
+      setAgents(mockAgents);
+      
+      const map: Record<string, string> = {};
+      mockAgents.forEach((a) => {
+        map[a._id] = a.name;
       });
-
-      const data = await res.json();
-      if (data.ok) {
-        setAgents(data.agents);
-        // 🔥 build fast lookup map
-        const map: Record<string, string> = {};
-        data.agents.forEach((a: Agent) => {
-          map[a._id] = a.name;
-        });
-
-        setAgentMap(map);
-      }
+      setAgentMap(map);
     } catch (err) {
       console.error("Error loading agents:", err);
     }
@@ -338,7 +316,6 @@ export default function WorkflowDetailPage() {
         },
         body: JSON.stringify({ agentId: selectedAgent }),
       });
-      // alert("Agent assigned successfully");
       addToast({
         type: "success",
         title: "Agent assigned successfully",
@@ -391,6 +368,7 @@ export default function WorkflowDetailPage() {
     fetchWorkflow();
     fetchAgents();
   }, [id]);
+
   useEffect(() => {
     if (!latestTask) return;
     if (["completed", "failed"].includes(latestTask.status)) return;
