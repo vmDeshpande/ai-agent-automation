@@ -8,7 +8,8 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { Activity, Workflow, ListChecks, Bot, Calendar } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
 import { useApi } from "@/hooks/useApi";
-
+import { DashboardStatSkeleton } from "@/components/skeletons/dashboard-stat-skeleton";
+import { ActivitySkeleton } from "@/components/skeletons/activity-skeleton";
 /* -----------------------------
    Types
 ------------------------------ */
@@ -35,33 +36,6 @@ type Task = {
    Skeleton
 ------------------------------ */
 
-function StatSkeleton() {
-  return (
-    <Card className="p-6 animate-pulse">
-      <div className="h-10 w-10 rounded-lg bg-muted" />
-      <div className="mt-4 space-y-2">
-        <div className="h-8 w-20 rounded bg-muted" />
-        <div className="h-4 w-24 rounded bg-muted" />
-      </div>
-    </Card>
-  );
-}
-
-function ActivitySkeleton() {
-  return (
-    <div className="flex items-center justify-between rounded-lg border p-4 animate-pulse">
-      <div className="flex items-center gap-4">
-        <div className="h-6 w-16 rounded bg-muted" />
-        <div className="space-y-2">
-          <div className="h-4 w-32 rounded bg-muted" />
-          <div className="h-3 w-24 rounded bg-muted" />
-        </div>
-      </div>
-      <div className="h-3 w-16 rounded bg-muted" />
-    </div>
-  );
-}
-
 /* -----------------------------
    Page
 ------------------------------ */
@@ -77,9 +51,7 @@ function DashboardPageInner() {
   useApi<Task[]>("/tasks");
 
   const recentTasks = tasks?.slice(0, 8) ?? [];
-  console.log("statsLoading: ", statsLoading);
-  console.log("stats: ", stats);
-  console.log("tasksData: ", recentTasks);
+  
 
   /* -----------------------------
      Assistant context

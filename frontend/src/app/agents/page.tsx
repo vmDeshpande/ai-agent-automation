@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Cpu, Thermometer, Zap } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
+import { WorkflowCardSkeleton } from "@/components/skeletons/workflow-card-skeleton";
 import {
   Dialog,
   DialogTrigger,
@@ -147,8 +148,13 @@ export default function AgentsPage() {
               <CreateAgentModal onCreated={fetchAgents} />
             </div>
 
+            {/* CHANGED: Added skeleton loaders instead of plain loading text */}
             {loading ? (
-              <p className="opacity-70">Loading agents…</p>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <WorkflowCardSkeleton key={i} />
+                ))}
+              </div>
             ) : agents.length === 0 ? (
               <p className="opacity-60">No agents created yet.</p>
             ) : (
