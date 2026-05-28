@@ -16,7 +16,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 async function uploadDocument(req, res) {
   try {
-
     const file = req.file;
 
     if (!file) {
@@ -27,47 +26,23 @@ async function uploadDocument(req, res) {
     }
 
     const extension = file.originalname.split(".").pop().toLowerCase();
-
     let text = "";
 
-    /* ---------- PDF ---------- */
     if (extension === "pdf") {
-
       const pdfData = await pdf(file.buffer);
       text = pdfData.text || "";
-
-    }
-
-    /* ---------- TEXT / MARKDOWN ---------- */
-    else if (extension === "txt" || extension === "md") {
-
+    } else if (extension === "txt" || extension === "md") {
       text = file.buffer.toString("utf-8");
-
-    }
-
-    /* ---------- JSON ---------- */
-    else if (extension === "json") {
-
+    } else if (extension === "json") {
       const json = JSON.parse(file.buffer.toString("utf-8"));
       text = JSON.stringify(json, null, 2);
-
-    }
-
-    /* ---------- CSV ---------- */
-    else if (extension === "csv") {
-
+    } else if (extension === "csv") {
       text = file.buffer.toString("utf-8");
-
-    }
-
-    /* ---------- UNSUPPORTED ---------- */
-    else {
-
+    } else {
       return res.status(400).json({
         ok: false,
         error: "unsupported_file_type"
       });
-
     }
 
     if (!text.trim()) {
@@ -77,8 +52,6 @@ async function uploadDocument(req, res) {
       });
     }
 
-    /* ---------- Create document record ---------- */
-
     const document = await Document.create({
       userId: req.user._id,
       title: file.originalname,
@@ -86,37 +59,17 @@ async function uploadDocument(req, res) {
       size: file.size
     });
 
-    /* ---------- Process document (chunk + embed) ---------- */
-
-    const settings = await SystemSettings.findOne({
-      userId: req.user._id,
-    });
-
+    const settings = await SystemSettings.findOne({ userId: req.user._id });
     const chatSettings = settings?.documentChat || {};
-
     const provider = chatSettings.provider || "ollama";
-    const model = chatSettings.model || "gemma3:4b";
-    const topK = chatSettings.topK || 3;
-    const temperature = chatSettings.temperature ?? 0.2;
-
     const agent = { config: { provider } };
 
     await processDocument(agent, document, text);
 
-    res.json({
-      ok: true,
-      document
-    });
-
+    res.json({ ok: true, document });
   } catch (err) {
-
     console.error("Document upload error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "upload_failed"
-    });
-
+    res.status(500).json({ ok: false, error: "upload_failed" });
   }
 }
 
@@ -125,33 +78,20 @@ async function uploadDocument(req, res) {
 ----------------------------- */
 
 async function listDocuments(req, res) {
-
-  const docs = await Document.find({
-    userId: req.user._id
-  }).sort({ createdAt: -1 });
-
-  res.json({
-    ok: true,
-    documents: docs
-  });
-
+  const docs = await Document.find({ userId: req.user._id }).sort({ createdAt: -1 });
+  res.json({ ok: true, documents: docs });
 }
 
 /* -----------------------------
-   Document Chat (RAG)
+   Document Chat (RAG) - Multi-Document Support
 ----------------------------- */
 
 async function chatWithDocument(req, res) {
   try {
+    // Modified to accept documentIds (array) instead of documentId (string)
+    const { documentIds, question } = req.body;
 
-    const { documentId, question } = req.body;
-
-    /* ---------- Load user settings ---------- */
-
-    const settings = await SystemSettings.findOne({
-      userId: req.user._id,
-    });
-
+    const settings = await SystemSettings.findOne({ userId: req.user._id });
     const chatSettings = settings?.documentChat || {};
 
     const provider = chatSettings.provider || "ollama";
@@ -161,30 +101,25 @@ async function chatWithDocument(req, res) {
 
     const agent = { config: { provider } };
 
-    /* ---------- Query vector store ---------- */
-
+    // Pass the array of documentIds to the updated queryDocument service
     const chunks = await queryDocument(
       agent,
       req.user._id,
-      documentId,
+      documentIds,
       question,
       topK
     );
 
-    const context = chunks.map((c) => c.content).join("\n\n");
+    // Format context with source attribution
+    const context = chunks.map((c) => 
+      `[Source: Document ID ${c.documentId}]\n${c.content}`
+    ).join("\n\n");
 
     const prompt = `
-You are analyzing a document that may contain structured data such as CSV rows or tables.
-
-Each line may represent an entry such as:
-Name, Role, Company
-
-Extract information carefully from the rows.
-
-If the question asks for a list, extract all matching rows from the provided context.
+You are analyzing documents. Some may contain structured data such as CSV rows or tables.
 
 If the information cannot be found in the context, say:
-"I could not find this information in the document."
+"I could not find this information in the document(s)."
 
 CONTEXT:
 ${context}
@@ -192,8 +127,6 @@ ${context}
 QUESTION:
 ${question}
 `;
-
-    /* ---------- Run LLM ---------- */
 
     const llm = await runLLM(prompt, {
       provider,
@@ -205,16 +138,12 @@ ${question}
       ok: true,
       answer: llm.text,
     });
-
   } catch (err) {
-
     console.error("Document query error:", err);
-
     res.status(500).json({
       ok: false,
       error: "query_failed",
     });
-
   }
 }
 
@@ -223,31 +152,15 @@ ${question}
 ----------------------------- */
 
 async function deleteDocument(req, res) {
-
   try {
-
     const { id } = req.params;
-
-    await Document.deleteOne({
-      _id: id,
-      userId: req.user._id
-    });
-
-    await DocumentChunk.deleteMany({
-      documentId: id,
-      userId: req.user._id
-    });
-
+    await Document.deleteOne({ _id: id, userId: req.user._id });
+    await DocumentChunk.deleteMany({ documentId: id, userId: req.user._id });
     res.json({ ok: true });
-
   } catch (err) {
-
     console.error("Delete document error:", err);
-
     res.status(500).json({ ok: false });
-
   }
-
 }
 
 /* -----------------------------
@@ -255,41 +168,18 @@ async function deleteDocument(req, res) {
 ----------------------------- */
 
 async function getDocument(req, res) {
-
   try {
-
     const { id } = req.params;
-
     const document = await Document.findById(id).lean();
-
     if (!document) {
-
-      return res.status(404).json({
-        ok: false,
-        error: "Document not found"
-      });
-
+      return res.status(404).json({ ok: false, error: "Document not found" });
     }
-
-    res.json({
-      ok: true,
-      document
-    });
-
+    res.json({ ok: true, document });
   } catch (err) {
-
     console.error("Get document error:", err);
-
-    res.status(500).json({
-      ok: false,
-      error: "fetch_failed"
-    });
-
+    res.status(500).json({ ok: false, error: "fetch_failed" });
   }
-
 }
-
-/* ----------------------------- */
 
 module.exports = {
   upload,

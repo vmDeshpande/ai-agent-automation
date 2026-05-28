@@ -13,7 +13,7 @@ function defaultEmbeddingModelFor(provider) {
         case "openai":
             return "text-embedding-3-small";
         case "gemini":
-            return "embedding-001";
+            return "text-embedding-004"; // Recommended modern cloud embedding model
         case "huggingface":
             return "sentence-transformers/all-MiniLM-L6-v2";
         case "ollama":
@@ -35,6 +35,12 @@ async function runEmbedding(text, agent) {
         embeddingProvider = primaryProvider;
     } else {
         embeddingProvider = "ollama";
+    }
+
+    // 🚀 BULLETPROOF FALLBACK: If Ollama is picked but its host configuration is missing, switch to gemini
+    if (embeddingProvider === "ollama" && !process.env.OLLAMA_HOST) {
+        console.warn("⚠️ Ollama host not found in .env. Automatically falling back to cloud Gemini embedding.");
+        embeddingProvider = "gemini";
     }
 
     const model =
@@ -81,16 +87,18 @@ async function runEmbedding(text, agent) {
     }
 
     /* -------- GEMINI -------- */
+    
     if (embeddingProvider === "gemini") {
         const genAI = new GoogleGenerativeAI(
             process.env.GEMINI_API_KEY
         );
 
-        const modelInstance = genAI.getGenerativeModel({
-            model: model || "embedding-001"
+        // For text-embedding-004, use the explicit getEmbeddingModel method
+        const result = await genAI.getEmbeddingModel({
+            model: model || "text-embedding-004"
+        }).embedContent({
+            content: { parts: [{ text }] }
         });
-
-        const result = await modelInstance.embedContent(text);
 
         return result.embedding.values;
     }
