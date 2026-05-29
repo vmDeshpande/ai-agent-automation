@@ -242,6 +242,32 @@ async function updateWorkflowSteps(req, res) {
   }
 }
 
+/** Clone/duplicate a workflow */
+async function cloneWorkflow(req, res) {
+  try {
+    const original = await Workflow.findById(req.params.id);
+    if (!original) return res.status(404).json({ ok: false, error: "not_found" });
+    if (original.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ ok: false, error: "forbidden" });
 
+    const cloned = await Workflow.create({
+      name: `${original.name} (Copy)`,
+      description: original.description,
+      userId: req.user._id,
+      agentId: original.agentId || null,
+      status: "pending",
+      tasks: [],
+      metadata: {
+        steps: original.metadata?.steps ? JSON.parse(JSON.stringify(original.metadata.steps)) : [],
+        edges: original.metadata?.edges ? JSON.parse(JSON.stringify(original.metadata.edges)) : [],
+      },
+    });
 
-module.exports = { createWorkflow, listWorkflows, getWorkflow, updateWorkflow, deleteWorkflow, addTaskToWorkflow, assignAgent, runWorkflowNow, updateWorkflowSteps };
+    res.status(201).json({ ok: true, workflow: cloned });
+  } catch (err) {
+    console.error("cloneWorkflow error", err);
+    res.status(500).json({ ok: false, error: "server_error" });
+  }
+}
+
+module.exports = { createWorkflow, listWorkflows, getWorkflow, updateWorkflow, deleteWorkflow, addTaskToWorkflow, assignAgent, runWorkflowNow, updateWorkflowSteps, cloneWorkflow };
