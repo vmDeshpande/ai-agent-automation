@@ -13,7 +13,8 @@ function defaultEmbeddingModelFor(provider) {
         case "openai":
             return "text-embedding-3-small";
         case "gemini":
-            return "embedding-001";
+            // Replaced text-embedding-004 with text-embedding-001 to match your current SDK version
+            return "text-embedding-001";
         case "huggingface":
             return "sentence-transformers/all-MiniLM-L6-v2";
         case "ollama":
@@ -30,6 +31,7 @@ async function runEmbedding(text, agent) {
     let embeddingProvider;
 
     if (configuredEmbeddingProvider) {
+        // Fallback safety if the agent passes an outdated name
         embeddingProvider = configuredEmbeddingProvider;
     } else if (supportsEmbedding(primaryProvider)) {
         embeddingProvider = primaryProvider;
@@ -37,11 +39,16 @@ async function runEmbedding(text, agent) {
         embeddingProvider = "ollama";
     }
 
-    const model =
+    let model =
         agent?.config?.embeddingModel ||
         (embeddingProvider === "ollama"
             ? "nomic-embed-text"
             : defaultEmbeddingModelFor(embeddingProvider));
+
+    // Force fallback update if outdated or mismatched structures slip through configuration parameters
+    if (embeddingProvider === "gemini" && (model === "embedding-001" || model === "text-embedding-004" || !model)) {
+        model = "text-embedding-001";
+    }
 
     if (!embeddingProvider) {
         throw new Error("No embedding provider configured");
@@ -87,7 +94,7 @@ async function runEmbedding(text, agent) {
         );
 
         const modelInstance = genAI.getGenerativeModel({
-            model: model || "embedding-001"
+            model: model
         });
 
         const result = await modelInstance.embedContent(text);
