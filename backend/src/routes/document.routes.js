@@ -19,7 +19,7 @@ router.post("/upload", auth, upload.single("file"), uploadDocument);
 router.get("/", auth, listDocuments);
 
 /* Chat with a document */
-router.post("/chat", chatWithDocument);
+router.post("/chat", auth, chatWithDocument);
 
 /* Delete document */
 router.delete("/:id", auth, deleteDocument);

@@ -10,15 +10,13 @@ const { runLLM } = require("../agents/llmAdapter");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// A structurally valid 24-character hex string for local auth bypass testing
-const MOCK_OBJECT_ID = "64f1fa2b9f1d4b2e8c8b4567";
-
 /* -----------------------------
    Upload Document
 ----------------------------- */
 
 async function uploadDocument(req, res) {
   try {
+
     const file = req.file;
 
     if (!file) {
@@ -29,23 +27,47 @@ async function uploadDocument(req, res) {
     }
 
     const extension = file.originalname.split(".").pop().toLowerCase();
+
     let text = "";
 
+    /* ---------- PDF ---------- */
     if (extension === "pdf") {
+
       const pdfData = await pdf(file.buffer);
       text = pdfData.text || "";
-    } else if (extension === "txt" || extension === "md") {
+
+    }
+
+    /* ---------- TEXT / MARKDOWN ---------- */
+    else if (extension === "txt" || extension === "md") {
+
       text = file.buffer.toString("utf-8");
-    } else if (extension === "json") {
+
+    }
+
+    /* ---------- JSON ---------- */
+    else if (extension === "json") {
+
       const json = JSON.parse(file.buffer.toString("utf-8"));
       text = JSON.stringify(json, null, 2);
-    } else if (extension === "csv") {
+
+    }
+
+    /* ---------- CSV ---------- */
+    else if (extension === "csv") {
+
       text = file.buffer.toString("utf-8");
-    } else {
+
+    }
+
+    /* ---------- UNSUPPORTED ---------- */
+    else {
+
       return res.status(400).json({
         ok: false,
         error: "unsupported_file_type"
       });
+
     }
 
     if (!text.trim()) {
@@ -55,32 +77,46 @@ async function uploadDocument(req, res) {
       });
     }
 
-    const currentUserId = req.user ? req.user._id : MOCK_OBJECT_ID;
+    /* ---------- Create document record ---------- */
 
     const document = await Document.create({
-      userId: currentUserId,
+      userId: req.user._id,
       title: file.originalname,
       fileType: extension,
       size: file.size
     });
 
-    const settings = await SystemSettings.findOne({ userId: currentUserId });
+    /* ---------- Process document (chunk + embed) ---------- */
+
+    const settings = await SystemSettings.findOne({
+      userId: req.user._id,
+    });
+
     const chatSettings = settings?.documentChat || {};
-    
-    const provider = chatSettings.provider && chatSettings.provider !== "ollama" ? chatSettings.provider : "gemini";
-    const agent = { 
-      config: { 
-        provider: provider,
-        embeddingProvider: "gemini"
-      } 
-    };
+
+    const provider = chatSettings.provider || "ollama";
+    const model = chatSettings.model || "gemma3:4b";
+    const topK = chatSettings.topK || 3;
+    const temperature = chatSettings.temperature ?? 0.2;
+
+    const agent = { config: { provider } };
 
     await processDocument(agent, document, text);
 
-    res.json({ ok: true, document });
+    res.json({
+      ok: true,
+      document
+    });
+
   } catch (err) {
+
     console.error("Document upload error:", err);
-    res.status(500).json({ ok: false, error: "upload_failed" });
+
+    res.status(500).json({
+      ok: false,
+      error: "upload_failed"
+    });
+
   }
 }
 
@@ -89,64 +125,75 @@ async function uploadDocument(req, res) {
 ----------------------------- */
 
 async function listDocuments(req, res) {
-  const currentUserId = req.user ? req.user._id : MOCK_OBJECT_ID;
-  const docs = await Document.find({ userId: currentUserId }).sort({ createdAt: -1 });
-  res.json({ ok: true, documents: docs });
+
+  const docs = await Document.find({
+    userId: req.user._id
+  }).sort({ createdAt: -1 });
+
+  res.json({
+    ok: true,
+    documents: docs
+  });
+
 }
 
 /* -----------------------------
-   Document Chat (RAG) - Multi-Document Support
+   Document Chat (RAG)
 ----------------------------- */
 
 async function chatWithDocument(req, res) {
   try {
-    const { documentIds, question, message } = req.body;
-    const finalQuestion = question || message;
 
-    if (!finalQuestion) {
-      return res.status(400).json({
-        ok: false,
-        error: "missing_question",
-        message: "Please provide a question or message string parameter."
-      });
-    }
+    const { documentId, question } = req.body;
 
-    const currentUserId = req.user ? req.user._id : MOCK_OBJECT_ID;
+    /* ---------- Load user settings ---------- */
 
-    const settings = await SystemSettings.findOne({ userId: currentUserId });
+    const settings = await SystemSettings.findOne({
+      userId: req.user._id,
+    });
+
     const chatSettings = settings?.documentChat || {};
 
-    const provider = "gemini";
-    const model = "models/gemini-1.5-flash";
+    const provider = chatSettings.provider || "ollama";
+    const model = chatSettings.model || "gemma3:4b";
     const topK = chatSettings.topK || 3;
     const temperature = chatSettings.temperature ?? 0.2;
 
     const agent = { config: { provider } };
 
+    /* ---------- Query vector store ---------- */
+
     const chunks = await queryDocument(
       agent,
-      currentUserId,
-      documentIds || [],
-      finalQuestion,
+      req.user._id,
+      documentId,
+      question,
       topK
     );
 
-    const context = chunks && chunks.length > 0
-      ? chunks.map((c) => `[Source: Document ID ${c.documentId}]\n${c.content}`).join("\n\n")
-      : "No contextual data segments match the matching document identifiers.";
+    const context = chunks.map((c) => c.content).join("\n\n");
 
     const prompt = `
-You are analyzing documents. Some may contain structured data such as CSV rows or tables.
+You are analyzing a document that may contain structured data such as CSV rows or tables.
+
+Each line may represent an entry such as:
+Name, Role, Company
+
+Extract information carefully from the rows.
+
+If the question asks for a list, extract all matching rows from the provided context.
 
 If the information cannot be found in the context, say:
-"I could not find this information in the document(s)."
+"I could not find this information in the document."
 
 CONTEXT:
 ${context}
 
 QUESTION:
-${finalQuestion}
+${question}
 `;
+
+    /* ---------- Run LLM ---------- */
 
     const llm = await runLLM(prompt, {
       provider,
@@ -158,12 +205,16 @@ ${finalQuestion}
       ok: true,
       answer: llm.text,
     });
+
   } catch (err) {
+
     console.error("Document query error:", err);
+
     res.status(500).json({
       ok: false,
       error: "query_failed",
     });
+
   }
 }
 
@@ -172,17 +223,31 @@ ${finalQuestion}
 ----------------------------- */
 
 async function deleteDocument(req, res) {
+
   try {
+
     const { id } = req.params;
-    const currentUserId = req.user ? req.user._id : MOCK_OBJECT_ID;
-    
-    await Document.deleteOne({ _id: id, userId: currentUserId });
-    await DocumentChunk.deleteMany({ documentId: id, userId: currentUserId });
+
+    await Document.deleteOne({
+      _id: id,
+      userId: req.user._id
+    });
+
+    await DocumentChunk.deleteMany({
+      documentId: id,
+      userId: req.user._id
+    });
+
     res.json({ ok: true });
+
   } catch (err) {
+
     console.error("Delete document error:", err);
+
     res.status(500).json({ ok: false });
+
   }
+
 }
 
 /* -----------------------------
@@ -190,18 +255,41 @@ async function deleteDocument(req, res) {
 ----------------------------- */
 
 async function getDocument(req, res) {
+
   try {
+
     const { id } = req.params;
+
     const document = await Document.findById(id).lean();
+
     if (!document) {
-      return res.status(404).json({ ok: false, error: "Document not found" });
+
+      return res.status(404).json({
+        ok: false,
+        error: "Document not found"
+      });
+
     }
-    res.json({ ok: true, document });
+
+    res.json({
+      ok: true,
+      document
+    });
+
   } catch (err) {
+
     console.error("Get document error:", err);
-    res.status(500).json({ ok: false, error: "fetch_failed" });
+
+    res.status(500).json({
+      ok: false,
+      error: "fetch_failed"
+    });
+
   }
+
 }
+
+/* ----------------------------- */
 
 module.exports = {
   upload,
