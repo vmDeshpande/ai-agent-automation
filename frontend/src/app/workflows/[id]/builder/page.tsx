@@ -139,6 +139,10 @@ function getTypeColor(type: StepType) {
       return "bg-green-500/20 text-green-400 border-green-500/30";
     case "Document":
       return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+    case "Condition":
+      return "bg-rose-500/20 text-rose-400 border-rose-500/30";
+    case "Switch":
+      return "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -183,6 +187,12 @@ function summarizeStep(step: WorkflowStep) {
             step.query.length > 120 ? "…" : ""
           }`
         : "No query configured";
+
+    case "Condition":
+      return `Condition: ${step.conditionType || "Unconfigured"}`;
+
+    case "Switch":
+      return "Switch routing engine step";
 
     case "Tool": {
       if (!step.tool) return "Tool not selected";
@@ -306,8 +316,8 @@ export default function WorkflowBuilderPage() {
         query: (s as any).query ?? "",
         topK: (s as any).topK ?? 4,
 
-        conditionType: (s as any).conditionType ?? "",
-        operator: (s as any).operator ?? "",
+        conditionType: (s as any).conditionType ?? "boolean",
+        operator: (s as any).operator ?? "equals",
         value: (s as any).value ?? "",
 
         trueTarget: (s as any).trueTarget ?? "",
@@ -321,7 +331,7 @@ export default function WorkflowBuilderPage() {
       setIsDirty(false);
     } catch (err) {
       console.error("Failed to load workflow", err);
-    } finaly {
+    } finally {
       setLoading(false);
     }
   }
@@ -358,12 +368,15 @@ export default function WorkflowBuilderPage() {
             s.type === "LLM" ||
             s.type === "HTTP" ||
             s.type === "Tool" ||
-            s.type === "Delay",
+            s.type === "Delay" ||
+            s.type === "Document" ||
+            s.type === "Condition" ||
+            s.type === "Switch",
         )
         .map((s) => ({
           id: s.id,
           name: s.name,
-          type: s.type as "LLM" | "HTTP" | "Tool" | "Delay",
+          type: s.type as any,
           summary: summarizeStep(s),
         })),
     });
@@ -613,7 +626,7 @@ export default function WorkflowBuilderPage() {
         title: "Failed to save workflow",
         description: "Something went wrong. Try again.",
       });
-    } finally {
+    } fillAll: {
       setIsSaving(false);
     }
   }
@@ -681,13 +694,9 @@ export default function WorkflowBuilderPage() {
                 >
                   ← Back to Workflow
                 </Button>
-                <Button variant="outline" disabled={isSaving}>
-                  <Save className="mr-2 size-4" />
-                  Save Draft
-                </Button>
                 <Button onClick={saveWorkflow} disabled={isSaving}>
-                  <Play className="mr-2 size-4" />
-                  {isSaving ? "Saving..." : "Save"}
+                  <Save className="mr-2 size-4" />
+                  {isSaving ? "Saving..." : "Save Workflow"}
                 </Button>
               </div>
             </div>
@@ -721,57 +730,13 @@ export default function WorkflowBuilderPage() {
                       exit={{ opacity: 0, y: -12, scale: 0.98 }}
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
-                      <Card
-                        className="p-6 transition-shadow hover:shadow-lg"
-                        onClick={() => {
-                          const validStepType = (
-                            ["LLM", "HTTP", "Tool", "Delay"].includes(step.type)
-                              ? step.type
-                              : "LLM"
-                          ) as "LLM" | "HTTP" | "Tool" | "Delay";
-                          setContext({
-                            page: "workflow-builder",
-                            workflowId: id,
-                            workflowName: workflowName ?? undefined,
-                            status: "editing",
-
-                            builderSteps: steps
-                              .filter(
-                                (s) =>
-                                  s.type === "LLM" ||
-                                  s.type === "HTTP" ||
-                                  s.type === "Tool" ||
-                                  s.type === "Delay",
-                              )
-                              .map((s) => ({
-                                id: s.id,
-                                name: s.name,
-                                type: s.type as
-                                  | "LLM"
-                                  | "HTTP"
-                                  | "Delay"
-                                  | "Tool",
-                                summary: summarizeStep(s),
-                              })),
-                            stepId: step.id,
-                            stepName: step.name,
-                            stepType: validStepType,
-                            stepDescription: summarizeStep(step),
-                          });
-                        }}
-                      >
+                      <Card className="p-6 transition-shadow hover:shadow-lg">
                         <div className="mb-4 flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <motion.span
-                              layout
-                              className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-                            >
+                            <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                               {index + 1}
-                            </motion.span>
-                            <Badge
-                              variant="outline"
-                              className={getTypeColor(step.type)}
-                            >
+                            </span>
+                            <Badge variant="outline" className={getTypeColor(step.type)}>
                               {step.type}
                             </Badge>
                           </div>
@@ -790,258 +755,177 @@ export default function WorkflowBuilderPage() {
                         </div>
 
                         <div className="space-y-4">
-                          <div>
-                            <Label>Step Type</Label>
-                            <Select
-                              value={step.type}
-                              onValueChange={(v) =>
-                                updateStep(step.id, {
-                                  type: v as StepType,
-                                })
-                              }
-                            >
-                              <SelectTrigger className="mt-1.5">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="LLM">LLM</SelectItem>
-                                <SelectItem value="HTTP">
-                                  HTTP Request
-                                </SelectItem>
-                                <SelectItem value="Delay">Delay</SelectItem>
-                                <SelectItem value="Tool">Tool</SelectItem>
-                                <SelectItem value="Document">
-                                  Document Query
-                                </SelectItem>
-                                <SelectItem value="Condition">
-                                  Condition
-                                </SelectItem>
-                                <SelectItem value="Switch">Switch</SelectItem>
-                              </SelectContent>
-                            </Select>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <Label>Step Type</Label>
+                              <Select
+                                value={step.type}
+                                onValueChange={(v) =>
+                                  updateStep(step.id, { type: v as StepType })
+                                }
+                              >
+                                <SelectTrigger className="mt-1.5">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="LLM">LLM</SelectItem>
+                                  <SelectItem value="HTTP">HTTP Request</SelectItem>
+                                  <SelectItem value="Delay">Delay</SelectItem>
+                                  <SelectItem value="Tool">Tool</SelectItem>
+                                  <SelectItem value="Document">Document Query</SelectItem>
+                                  <SelectItem value="Condition">Condition</SelectItem>
+                                  <SelectItem value="Switch">Switch</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div>
+                              <Label>Step Name</Label>
+                              <Input
+                                className="mt-1.5"
+                                value={step.name}
+                                onChange={(e) =>
+                                  updateStep(step.id, { name: e.target.value })
+                                }
+                              />
+                            </div>
                           </div>
 
-                          <div>
-                            <Label>Step Name</Label>
-                            <Input
-                              className="mt-1.5"
-                              value={step.name}
-                              onChange={(e) =>
-                                updateStep(step.id, {
-                                  name: e.target.value,
-                                })
-                              }
-                            />
-                          </div>
-
-                          {step.type === "Tool" && (
-                            <>
+                          {/* 1. LLM ADVANCED OPTIONS CONFIGURATION */}
+                          {step.type === "LLM" && (
+                            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
                               <div>
-                                <Label>Tool</Label>
+                                <Label>Prompt Context Template</Label>
+                                <Textarea
+                                  className="mt-1.5"
+                                  placeholder="Enter prompt instructions..."
+                                  value={step.prompt ?? ""}
+                                  onChange={(e) => updateStep(step.id, { prompt: e.target.value })}
+                                />
+                              </div>
+                              <div className="flex items-center gap-4 pt-2">
+                                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="rounded border-gray-300 text-primary focus:ring-primary size-4"
+                                    checked={step.useMemory ?? false}
+                                    onChange={(e) => updateStep(step.id, { useMemory: e.target.checked })}
+                                  />
+                                  Enable Assistant Vector Memory Integration
+                                </label>
+                              </div>
+                              {step.useMemory && (
+                                <div className="w-1/3">
+                                  <Label>Memory Top K Context Limit</Label>
+                                  <Input
+                                    type="number"
+                                    className="mt-1.5"
+                                    value={step.memoryTopK ?? 5}
+                                    onChange={(e) => updateStep(step.id, { memoryTopK: parseInt(e.target.value) || 5 })}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 2. DOCUMENT STEP CONFIGURATION UI */}
+                          {step.type === "Document" && (
+                            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                              <div>
+                                <Label>Target System Knowledge Document</Label>
                                 <Select
-                                  value={step.tool}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { tool: v as any })
-                                  }
+                                  value={step.documentId ?? ""}
+                                  onValueChange={(v) => updateStep(step.id, { documentId: v })}
                                 >
                                   <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select tool" />
+                                    <SelectValue placeholder="Select target document vector reference" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="email">Email</SelectItem>
-                                    <SelectItem value="file">File</SelectItem>
-                                    <SelectItem value="browser">
-                                      Browser
-                                    </SelectItem>
+                                    {documents.map((doc) => (
+                                      <SelectItem key={doc._id} value={doc._id}>
+                                        {doc.name || doc.filename || doc._id}
+                                      </SelectItem>
+                                    ))}
+                                    {documents.length === 0 && (
+                                      <SelectItem value="none" disabled>No managed documents available</SelectItem>
+                                    )}
                                   </SelectContent>
                                 </Select>
                               </div>
-
-                              {step.tool === "email" && (
-                                <>
-                                  <div>
-                                    <Label>To</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.to ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          to: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <Label>Subject</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.subject ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          subject: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <Label>Text</Label>
-                                    <Textarea
-                                      className="mt-1.5"
-                                      value={step.text ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          text: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                </>
-                              )}
-
-                              {step.tool === "file" && (
-                                <>
-                                  <div>
-                                    <Label>Action</Label>
-                                    <Select
-                                      value={step.action}
-                                      onValueChange={(v) =>
-                                        updateStep(step.id, { action: v })
-                                      }
-                                    >
-                                      <SelectTrigger className="mt-1.5">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="write">
-                                          Write
-                                        </SelectItem>
-                                        <SelectItem value="append">
-                                          Append
-                                        </SelectItem>
-                                        <SelectItem value="read">
-                                          Read
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  <div>
-                                    <Label>Path</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.path ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          path: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-
-                                  {step.action !== "read" && (
-                                    <div>
-                                      <Label>Content</Label>
-                                      <Textarea
-                                        className="mt-1.5"
-                                        value={step.content ?? ""}
-                                        onChange={(e) =>
-                                          updateStep(step.id, {
-                                            content: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              )}
-
-                              {step.tool === "browser" && (
-                                <>
-                                  <div>
-                                    <Label>Action</Label>
-                                    <Select
-                                      value={step.action}
-                                      onValueChange={(v) =>
-                                        updateStep(step.id, { action: v })
-                                      }
-                                    >
-                                      <SelectTrigger className="mt-1.5">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="screenshot">
-                                          Screenshot
-                                        </SelectItem>
-                                        <SelectItem value="scrape">
-                                          Scrape Text
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  <div>
-                                    <Label>URL</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.url ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          url: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                </>
-                              )}
-                            </>
-                          )}
-
-                          {step.type === "LLM" && (
-                            <div>
-                              <Label>System Prompt / Instruction</Label>
-                              <Textarea
-                                className="mt-1.5 min-h-[100px]"
-                                placeholder="Tell the model what to do with the input..."
-                                value={step.prompt ?? ""}
-                                onChange={(e) =>
-                                  updateStep(step.id, {
-                                    prompt: e.target.value,
-                                  })
-                                }
-                              />
+                              <div className="grid grid-cols-3 gap-4">
+                                <div className="col-span-2">
+                                  <Label>Search Vector Semantic Query</Label>
+                                  <Input
+                                    className="mt-1.5"
+                                    placeholder="Enter structural search parameter macro..."
+                                    value={step.query ?? ""}
+                                    onChange={(e) => updateStep(step.id, { query: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label>Top K Results</Label>
+                                  <Input
+                                    type="number"
+                                    className="mt-1.5"
+                                    value={step.topK ?? 4}
+                                    onChange={(e) => updateStep(step.id, { topK: parseInt(e.target.value) || 4 })}
+                                  />
+                                </div>
+                              </div>
                             </div>
                           )}
 
-                          {step.type === "Delay" && (
-                            <div>
-                              <Label>Delay duration (seconds)</Label>
-                              <Input
-                                type="number"
-                                className="mt-1.5"
-                                value={step.delay ?? 0}
-                                onChange={(e) =>
-                                  updateStep(step.id, {
-                                    delay: parseInt(e.target.value) || 0,
-                                  })
-                                }
-                              />
+                          {/* 3. CONDITION STEP CONFIGURATION UI */}
+                          {step.type === "Condition" && (
+                            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                              <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                  <Label>Evaluation Type</Label>
+                                  <Select
+                                    value={step.conditionType ?? "boolean"}
+                                    onValueChange={(v) => updateStep(step.id, { conditionType: v as any })}
+                                  >
+                                    <SelectTrigger className="mt-1.5">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="boolean">Boolean Eval</SelectItem>
+                                      <SelectItem value="sentiment">NLP Sentiment</SelectItem>
+                                      <SelectItem value="contains">Substring Contains</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label>Comparison Operator</Label>
+                                  <Input
+                                    className="mt-1.5"
+                                    placeholder="e.g. eq, gt, text_matches"
+                                    value={step.operator ?? ""}
+                                    onChange={(e) => updateStep(step.id, { operator: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label>Target Verification Value</Label>
+                                  <Input
+                                    className="mt-1.5"
+                                    placeholder="e.g. true, positive"
+                                    value={step.value ?? ""}
+                                    onChange={(e) => updateStep(step.id, { value: e.target.value })}
+                                  />
+                                </div>
+                              </div>
                             </div>
                           )}
 
+                          {/* 4. HTTP REQUEST STEP CONFIGURATION */}
                           {step.type === "HTTP" && (
-                            <>
-                              <div className="grid grid-cols-3 gap-3">
-                                <div className="col-span-1">
+                            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                              <div className="grid grid-cols-4 gap-4">
+                                <div>
                                   <Label>Method</Label>
                                   <Select
                                     value={step.method ?? "GET"}
-                                    onValueChange={(v) =>
-                                      updateStep(step.id, {
-                                        method: v as any,
-                                      })
-                                    }
+                                    onValueChange={(v) => updateStep(step.id, { method: v as any })}
                                   >
                                     <SelectTrigger className="mt-1.5">
                                       <SelectValue />
@@ -1050,43 +934,177 @@ export default function WorkflowBuilderPage() {
                                       <SelectItem value="GET">GET</SelectItem>
                                       <SelectItem value="POST">POST</SelectItem>
                                       <SelectItem value="PUT">PUT</SelectItem>
-                                      <SelectItem value="DELETE">
-                                        DELETE
-                                      </SelectItem>
+                                      <SelectItem value="DELETE">DELETE</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-3">
                                   <Label>Endpoint URL</Label>
                                   <Input
                                     className="mt-1.5"
-                                    placeholder="https://api.example.com/data"
+                                    placeholder="https://api.example.com/v1"
                                     value={step.url ?? ""}
-                                    onChange={(e) =>
-                                      updateStep(step.id, {
-                                        url: e.target.value,
-                                      })
-                                    }
+                                    onChange={(e) => updateStep(step.id, { url: e.target.value })}
                                   />
                                 </div>
                               </div>
+                              <div>
+                                <Label>JSON Post Payload Payload Body String</Label>
+                                <Textarea
+                                  className="mt-1.5 font-mono text-xs"
+                                  placeholder='{ "key": "value" }'
+                                  value={step.body ?? ""}
+                                  onChange={(e) => updateStep(step.id, { body: e.target.value })}
+                                />
+                              </div>
+                            </div>
+                          )}
 
-                              {step.method !== "GET" && (
-                                <div>
-                                  <Label>JSON Payload Body</Label>
-                                  <Textarea
-                                    className="mt-1.5 font-mono text-sm"
-                                    placeholder={`{\n  "key": "value"\n}`}
-                                    value={step.body ?? ""}
-                                    onChange={(e) =>
-                                      updateStep(step.id, {
-                                        body: e.target.value,
-                                      })
-                                    }
-                                  />
+                          {/* 5. DELAY CONFIGURATION */}
+                          {step.type === "Delay" && (
+                            <div className="rounded-md border p-4 bg-muted/20">
+                              <Label>Execution Pipeline Hold Intercept Interval (Seconds)</Label>
+                              <Input
+                                type="number"
+                                className="mt-1.5 w-1/3"
+                                value={step.delay ?? 0}
+                                onChange={(e) => updateStep(step.id, { delay: parseInt(e.target.value) || 0 })}
+                              />
+                            </div>
+                          )}
+
+                          {/* 6. TOOL INTEGRATIONS & BROWSER EVAL CODE EDITOR */}
+                          {step.type === "Tool" && (
+                            <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                              <div>
+                                <Label>Target System Engine Sub-Tool</Label>
+                                <Select
+                                  value={step.tool}
+                                  onValueChange={(v) => updateStep(step.id, { tool: v as any })}
+                                >
+                                  <SelectTrigger className="mt-1.5">
+                                    <SelectValue placeholder="Select automated utility engine" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="email">SMTP Email Client</SelectItem>
+                                    <SelectItem value="file">Local Posix VFS File System</SelectItem>
+                                    <SelectItem value="browser">Headless Sandbox Browser Engine</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              {step.tool === "email" && (
+                                <div className="space-y-3 pt-2">
+                                  <div>
+                                    <Label>Recipient (To)</Label>
+                                    <Input
+                                      className="mt-1"
+                                      value={step.to ?? ""}
+                                      onChange={(e) => updateStep(step.id, { to: e.target.value })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label>Subject Line</Label>
+                                    <Input
+                                      className="mt-1"
+                                      value={step.subject ?? ""}
+                                      onChange={(e) => updateStep(step.id, { subject: e.target.value })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label>Body Text</Label>
+                                    <Textarea
+                                      className="mt-1"
+                                      value={step.text ?? ""}
+                                      onChange={(e) => updateStep(step.id, { text: e.target.value })}
+                                    />
+                                  </div>
                                 </div>
                               )}
-                            </>
+
+                              {step.tool === "file" && (
+                                <div className="space-y-3 pt-2">
+                                  <div>
+                                    <Label>File System Direct IO Operation</Label>
+                                    <Select
+                                      value={step.action ?? "read"}
+                                      onValueChange={(v) => updateStep(step.id, { action: v })}
+                                    >
+                                      <SelectTrigger className="mt-1">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="read">Read Node File File</SelectItem>
+                                        <SelectItem value="write">Write / Override Target File</SelectItem>
+                                        <SelectItem value="append">Append Payload Substream</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label>System Direct Path URI</Label>
+                                    <Input
+                                      className="mt-1"
+                                      placeholder="./workspace/output.log"
+                                      value={step.path ?? ""}
+                                      onChange={(e) => updateStep(step.id, { path: e.target.value })}
+                                    />
+                                  </div>
+                                  {step.action !== "read" && (
+                                    <div>
+                                      <Label>Data File IO Stream Payload Buffer Content</Label>
+                                      <Textarea
+                                        className="mt-1"
+                                        value={step.content ?? ""}
+                                        onChange={(e) => updateStep(step.id, { content: e.target.value })}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {step.tool === "browser" && (
+                                <div className="space-y-3 pt-2">
+                                  <div className="grid grid-cols-3 gap-4">
+                                    <div className="col-span-1">
+                                      <Label>Browser Action Action Mode</Label>
+                                      <Select
+                                        value={step.action ?? "screenshot"}
+                                        onValueChange={(v) => updateStep(step.id, { action: v })}
+                                      >
+                                        <SelectTrigger className="mt-1">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="screenshot">Capture PNG Screenshot</SelectItem>
+                                          <SelectItem value="scrape">Scrape Normalized DOM Page Text</SelectItem>
+                                          <SelectItem value="evaluate">Evaluate Sandbox Playwright Code</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <Label>Target Remote Address URL Connection</Label>
+                                      <Input
+                                        className="mt-1"
+                                        placeholder="https://news.ycombinator.com"
+                                        value={step.url ?? ""}
+                                        onChange={(e) => updateStep(step.id, { url: e.target.value })}
+                                      />
+                                    </div>
+                                  </div>
+                                  {step.action === "evaluate" && (
+                                    <div>
+                                      <Label>Browser Sandboxed Playwright Custom JS Code Execution Editor</Label>
+                                      <Textarea
+                                        className="mt-1 font-mono text-xs h-32 bg-slate-950 text-emerald-400 border-slate-800 focus-visible:ring-emerald-500"
+                                        placeholder="async ({ page, input }) => {&#10;  await page.click('.login-btn');&#10;  return await page.title();&#10;}"
+                                        value={step.code ?? ""}
+                                        onChange={(e) => updateStep(step.id, { code: e.target.value })}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </Card>
@@ -1094,8 +1112,8 @@ export default function WorkflowBuilderPage() {
                   ))}
                 </AnimatePresence>
 
-                <Button className="w-full border-dashed" variant="outline" onClick={addStep}>
-                  <Plus className="mr-2 size-4" /> Add Execution Node Step
+                <Button className="w-full py-6 border-dashed" variant="outline" onClick={addStep}>
+                  <Plus className="mr-2 size-4" /> Add Workflow Orchestration Step
                 </Button>
               </div>
             )}
@@ -1103,23 +1121,23 @@ export default function WorkflowBuilderPage() {
         </main>
       </div>
 
-      {/* Intercept Navigation Custom Confirmation Modal Popup */}
+      {/* UNSAVED MODAL SAFETY EXIT INTERCEPT WARNING GUARD */}
       <AnimatePresence>
         {showExitModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg"
+              className="w-full max-w-md rounded-xl border bg-background p-6 shadow-2xl"
             >
-              <h2 className="text-xl font-bold">Unsaved Changes</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                You have modified your workflow pipeline configuration layouts. Leaving now will permanently discard all unsaved step transitions.
+              <h2 className="text-xl font-bold text-destructive">Unsaved Workspace Mutations Detected</h2>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                You have active unsaved structural pipeline updates in your local application layer view memory instance workspace. Leaving will discard all changes.
               </p>
               <div className="mt-6 flex justify-end gap-3">
                 <Button variant="outline" onClick={() => setShowExitModal(false)}>
-                  Cancel
+                  Cancel Inspection
                 </Button>
                 <Button
                   variant="destructive"
@@ -1129,7 +1147,7 @@ export default function WorkflowBuilderPage() {
                     router.push(`/workflows/${id}`);
                   }}
                 >
-                  Leave Anyway
+                  Discard Workspace Modifications
                 </Button>
               </div>
             </motion.div>
