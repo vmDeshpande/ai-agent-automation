@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { AuthGuard } from "@/components/auth/auth-guard";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import VisualBuilder from "@/components/workflow/visual-builder";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect } from "react";
 import { Save, Play, Plus, Trash2 } from "lucide-react";
 import {
   Select,
@@ -48,42 +47,33 @@ type WorkflowStep = {
     y: number;
   };
 
-  // LLM
   useMemory?: boolean;
   memoryTopK?: number;
   prompt?: string;
 
-  // HTTP
   url?: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: string;
 
-  // Delay
   delay?: number;
 
-  // 🔥 Tool
   tool?: ToolType;
 
-  // Email
   to?: string;
   subject?: string;
   text?: string;
   html?: string;
 
-  // File
   action?: string;
   path?: string;
   content?: string;
 
-  // Browser
   code?: string;
 
-  // Document RAG
   documentId?: string;
   query?: string;
   topK?: number;
 
-  // CONDITION (NEW SYSTEM)
   conditionType?: "boolean" | "sentiment" | "contains";
   operator?: string;
   value?: string;
@@ -91,10 +81,9 @@ type WorkflowStep = {
   trueTarget?: string;
   falseTarget?: string;
 
-  // SWITCH
   cases?: {
-    value: string; // what to match
-    target: string; // stepId
+    value: string;
+    target: string;
   }[];
 
   defaultTarget?: string;
@@ -136,21 +125,6 @@ type WorkflowResponse = {
   };
 };
 
-type BackendStepType = "llm" | "http" | "delay" | "tool";
-
-type BackendStepPayload = {
-  stepId: string;
-  name: string;
-  type: BackendStepType;
-
-  prompt?: string;
-  seconds?: number;
-
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  url?: string;
-  body?: string;
-};
-
 /* ---------------- UTILS ---------------- */
 
 function getTypeColor(type: StepType) {
@@ -172,7 +146,6 @@ function getTypeColor(type: StepType) {
 
 function summarizeStep(step: WorkflowStep) {
   switch (step.type) {
-    /* ---------- LLM ---------- */
     case "LLM":
       return step.prompt
         ? `Prompt: ${step.prompt.slice(0, 120)}${
@@ -180,7 +153,6 @@ function summarizeStep(step: WorkflowStep) {
           }`
         : "No prompt configured";
 
-    /* ---------- HTTP ---------- */
     case "HTTP": {
       const method = step.method ?? "GET";
       const url = step.url?.trim() || "❌ not set";
@@ -202,11 +174,9 @@ function summarizeStep(step: WorkflowStep) {
       );
     }
 
-    /* ---------- DELAY ---------- */
     case "Delay":
       return `Delay for ${step.delay ?? 0} seconds`;
 
-    /* ---------- DOCUMENT QUERY ---------- */
     case "Document":
       return step.query
         ? `Query: ${step.query.slice(0, 120)}${
@@ -214,11 +184,9 @@ function summarizeStep(step: WorkflowStep) {
           }`
         : "No query configured";
 
-    /* ---------- TOOL ---------- */
     case "Tool": {
       if (!step.tool) return "Tool not selected";
 
-      /* EMAIL TOOL */
       if (step.tool === "email") {
         const to = step.to || "❌ no recipient";
         const subject = step.subject || "no subject";
@@ -226,7 +194,6 @@ function summarizeStep(step: WorkflowStep) {
         return `Email → ${to} | Subject: ${subject}`;
       }
 
-      /* FILE TOOL */
       if (step.tool === "file") {
         const action = step.action || "action";
         const path = step.path || "❌ path not set";
@@ -234,7 +201,6 @@ function summarizeStep(step: WorkflowStep) {
         return `File ${action} | Path: ${path}`;
       }
 
-      /* BROWSER TOOL */
       if (step.tool === "browser") {
         const action = step.action || "action";
         const url = step.url || "❌ url not set";
@@ -264,33 +230,13 @@ export default function WorkflowBuilderPage() {
   const [edges, setEdges] = useState<any[]>([]);
   const { setContext, clearContext } = useAssistantContext();
 
+  // Safety tracking intercept state flags
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+
   async function fetchWorkflow() {
     try {
-      // Intercept local testing mocks immediately
-      if (id === "mock-123") {
-        setWorkflowName("Test Automation Pipeline");
-        setEdges([]);
-        setSteps([
-          {
-            id: "step-1",
-            type: "LLM",
-            name: "Analyze Customer Response Sentiment",
-            prompt: "Determine if this customer input text expression carries a positive, neutral, or negative sentiment.",
-            position: { x: 100, y: 150 }
-          },
-          {
-            id: "step-2",
-            type: "Delay",
-            name: "Hold Processing Buffer",
-            delay: 15,
-            position: { x: 100, y: 350 }
-          }
-        ]);
-        setIsDirty(false);
-        setLoading(false);
-        return;
-      }
-
       const res = await fetch(apiUrl(`/workflows/${id}`), {
         headers: {
           Authorization: "Bearer " + localStorage.getItem("token"),
@@ -311,7 +257,6 @@ export default function WorkflowBuilderPage() {
       }));
       setEdges(backendEdges);
 
-      // 🔄 normalize backend steps → builder steps
       const normalizedSteps: WorkflowStep[] = backendSteps.map((s) => ({
         id: s.stepId,
         name: s.name,
@@ -334,20 +279,16 @@ export default function WorkflowBuilderPage() {
 
         position: (s as any).position || { x: 0, y: 0 },
 
-        // LLM
         useMemory: (s as any).useMemory ?? false,
         memoryTopK: (s as any).memoryTopK ?? 5,
         prompt: s.prompt ?? "",
 
-        // HTTP
         url: s.url ?? "",
         method: s.method ?? "GET",
         body: s.body ?? "",
 
-        // Delay
         delay: s.type === "delay" ? (s.seconds ?? 0) : 0,
 
-        // 🔥 TOOL FIELDS
         tool:
           s.type === "file" || s.type === "email" || s.type === "browser"
             ? (s.type as ToolType)
@@ -361,12 +302,10 @@ export default function WorkflowBuilderPage() {
         content: (s as any).content ?? "",
         code: (s as any).code ?? "",
 
-        // Document
         documentId: (s as any).documentId ?? "",
         query: (s as any).query ?? "",
         topK: (s as any).topK ?? 4,
 
-        // CONDITION
         conditionType: (s as any).conditionType ?? "",
         operator: (s as any).operator ?? "",
         value: (s as any).value ?? "",
@@ -374,21 +313,35 @@ export default function WorkflowBuilderPage() {
         trueTarget: (s as any).trueTarget ?? "",
         falseTarget: (s as any).falseTarget ?? "",
 
-        // SWITCH
         cases: (s as any).cases ?? [],
         defaultTarget: (s as any).defaultTarget ?? "",
       }));
 
       setSteps(normalizedSteps);
+      setIsDirty(false);
     } catch (err) {
       console.error("Failed to load workflow", err);
-    } finally {
+    } finaly {
       setLoading(false);
     }
   }
+
   useEffect(() => {
     fetchWorkflow();
   }, [id]);
+
+  // Tab close/refresh listener protection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved workspace configuration modifications.";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   useEffect(() => {
     if (!id) return;
@@ -443,6 +396,7 @@ export default function WorkflowBuilderPage() {
   }, []);
 
   function addStep() {
+    setIsDirty(true);
     setSteps((prev) => [
       ...prev,
       {
@@ -454,9 +408,20 @@ export default function WorkflowBuilderPage() {
     ]);
   }
 
+  function removeStep(stepId: string) {
+    setIsDirty(true);
+    setSteps((prev) => prev.filter((s) => s.id !== stepId));
+  }
+
+  function updateStep(stepId: string, patch: Partial<WorkflowStep>) {
+    setIsDirty(true);
+    setSteps((prev) =>
+      prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
+    );
+  }
+
   function enrichStepsWithEdges(steps: WorkflowStep[], edges: any[]) {
     return steps.map((step) => {
-      // 🔀 SWITCH NODE
       if (step.type === "Switch") {
         const outgoing = edges.filter((e) => e.source === step.id);
 
@@ -476,7 +441,6 @@ export default function WorkflowBuilderPage() {
         };
       }
 
-      // 🔁 CONDITION NODE
       if (step.type === "Condition") {
         const trueEdge = edges.find(
           (e) => e.source === step.id && e.condition === "true",
@@ -499,23 +463,10 @@ export default function WorkflowBuilderPage() {
 
   async function saveWorkflow() {
     try {
-      if (id === "mock-123") {
-        // Intercept save triggers locally for local validation testing
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        addToast({
-          type: "success",
-          title: "Workflow saved",
-          description: "Your workflow steps were updated successfully (Mock Validation Save)",
-        });
-        setIsDirty(false);
-        setIsSaving(false);
-        return;
-      }
-
+      setIsSaving(true);
       const enrichedSteps = enrichStepsWithEdges(steps, edges);
 
       const backendSteps = enrichedSteps.map((s) => {
-        // ----- LLM -----
         if (s.type === "LLM") {
           return {
             stepId: s.id,
@@ -528,7 +479,6 @@ export default function WorkflowBuilderPage() {
           };
         }
 
-        // ----- Delay -----
         if (s.type === "Delay") {
           return {
             stepId: s.id,
@@ -539,7 +489,6 @@ export default function WorkflowBuilderPage() {
           };
         }
 
-        // ----- HTTP -----
         if (s.type === "HTTP") {
           return {
             stepId: s.id,
@@ -578,7 +527,6 @@ export default function WorkflowBuilderPage() {
           };
         }
 
-        // ----- SWITCH -----
         if (s.type === "Switch") {
           return {
             stepId: s.id,
@@ -588,12 +536,8 @@ export default function WorkflowBuilderPage() {
           };
         }
 
-        // ----- TOOL (convert to real executor type) -----
         if (s.type === "Tool" && s.tool) {
-          // 🔥 convert tool → actual executor type
           const toolType = s.tool.toLowerCase();
-          // expected: "file" | "email" | "browser"
-
           const base: any = {
             stepId: s.id,
             name: s.name,
@@ -601,7 +545,6 @@ export default function WorkflowBuilderPage() {
             type: toolType,
           };
 
-          // ----- FILE -----
           if (toolType === "file") {
             return {
               ...base,
@@ -611,7 +554,6 @@ export default function WorkflowBuilderPage() {
             };
           }
 
-          // ----- EMAIL -----
           if (toolType === "email") {
             return {
               ...base,
@@ -622,7 +564,6 @@ export default function WorkflowBuilderPage() {
             };
           }
 
-          // ----- BROWSER -----
           if (toolType === "browser") {
             return {
               ...base,
@@ -632,11 +573,9 @@ export default function WorkflowBuilderPage() {
             };
           }
 
-          // fallback safety
           return base;
         }
 
-        // fallback (should never hit)
         return {
           stepId: s.id,
           name: s.name,
@@ -661,6 +600,7 @@ export default function WorkflowBuilderPage() {
         throw new Error("Failed to save workflow");
       }
 
+      setIsDirty(false);
       addToast({
         type: "success",
         title: "Workflow saved",
@@ -673,18 +613,11 @@ export default function WorkflowBuilderPage() {
         title: "Failed to save workflow",
         description: "Something went wrong. Try again.",
       });
+    } finally {
+      setIsSaving(false);
     }
   }
 
-  function removeStep(stepId: string) {
-    setSteps((prev) => prev.filter((s) => s.id !== stepId));
-  }
-
-  function updateStep(stepId: string, patch: Partial<WorkflowStep>) {
-    setSteps((prev) =>
-      prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
-    );
-  }
   if (loading) {
     return (
       <div className="flex min-h-screen">
@@ -695,6 +628,7 @@ export default function WorkflowBuilderPage() {
       </div>
     );
   }
+
   return (
     <AuthGuard>
       <div className="flex min-h-screen">
@@ -737,34 +671,44 @@ export default function WorkflowBuilderPage() {
               <div className="flex items-center gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => router.push(`/workflows/${id}`)}
+                  onClick={() => {
+                    if (isDirty) {
+                      setShowExitModal(true);
+                    } else {
+                      router.push(`/workflows/${id}`);
+                    }
+                  }}
                 >
                   ← Back to Workflow
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" disabled={isSaving}>
                   <Save className="mr-2 size-4" />
                   Save Draft
                 </Button>
-                <Button onClick={saveWorkflow}>
+                <Button onClick={saveWorkflow} disabled={isSaving}>
                   <Play className="mr-2 size-4" />
-                  Save
+                  {isSaving ? "Saving..." : "Save"}
                 </Button>
               </div>
             </div>
 
-            {/* Steps */}
-
+            {/* Visual Builder Graph Workspace View */}
             {builderMode === "visual" && (
               <VisualBuilder
                 steps={steps}
-                setSteps={setSteps}
+                setSteps={(updatedSteps) => {
+                  setIsDirty(true);
+                  setSteps(updatedSteps);
+                }}
                 edges={edges}
                 onEdgesChange={(updatedEdges) => {
+                  setIsDirty(true);
                   setEdges(updatedEdges);
                 }}
               />
             )}
 
+            {/* List Builder Workspace View */}
             {builderMode === "list" && (
               <div className="mx-auto max-w-3xl space-y-4">
                 <AnimatePresence initial={false}>
@@ -778,7 +722,6 @@ export default function WorkflowBuilderPage() {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
                       <Card
-                        key={step.id}
                         className="p-6 transition-shadow hover:shadow-lg"
                         onClick={() => {
                           const validStepType = (
@@ -837,14 +780,16 @@ export default function WorkflowBuilderPage() {
                             variant="ghost"
                             size="icon"
                             className="text-destructive"
-                            onClick={() => removeStep(step.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeStep(step.id);
+                            }}
                           >
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
 
                         <div className="space-y-4">
-                          {/* Step Type */}
                           <div>
                             <Label>Step Type</Label>
                             <Select
@@ -876,7 +821,6 @@ export default function WorkflowBuilderPage() {
                             </Select>
                           </div>
 
-                          {/* Step Name */}
                           <div>
                             <Label>Step Name</Label>
                             <Input
@@ -890,7 +834,6 @@ export default function WorkflowBuilderPage() {
                             />
                           </div>
 
-                          {/* Tools */}
                           {step.type === "Tool" && (
                             <>
                               <div>
@@ -1031,8 +974,8 @@ export default function WorkflowBuilderPage() {
                                         <SelectItem value="screenshot">
                                           Screenshot
                                         </SelectItem>
-                                        <SelectItem value="evaluate">
-                                          Evaluate
+                                        <SelectItem value="scrape">
+                                          Scrape Text
                                         </SelectItem>
                                       </SelectContent>
                                     </Select>
@@ -1050,271 +993,99 @@ export default function WorkflowBuilderPage() {
                                       }
                                     />
                                   </div>
-
-                                  {step.action === "evaluate" && (
-                                    <div>
-                                      <Label>Code</Label>
-                                      <Textarea
-                                        className="mt-1.5 font-mono text-sm"
-                                        value={step.code ?? ""}
-                                        onChange={(e) =>
-                                          updateStep(step.id, {
-                                            code: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                  )}
                                 </>
                               )}
                             </>
                           )}
 
-                          {/* LLM */}
                           {step.type === "LLM" && (
-                            <>
-                              <div>
-                                <Label>Prompt</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px] font-mono text-sm"
-                                  value={step.prompt ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      prompt: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-
-                              {/* 🔥 Advanced Options */}
-                              <div className="mt-4 rounded-lg border border-muted p-4">
-                                <p className="text-sm font-semibold mb-3">
-                                  Advanced Options
-                                </p>
-
-                                <div className="flex items-center justify-between">
-                                  <Label className="cursor-pointer">
-                                    Use Agent Memory
-                                  </Label>
-
-                                  <input
-                                    type="checkbox"
-                                    checked={step.useMemory ?? false}
-                                    onChange={(e) =>
-                                      updateStep(step.id, {
-                                        useMemory: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                </div>
-
-                                {step.useMemory && (
-                                  <div className="mt-3">
-                                    <Label>Memory Top K</Label>
-                                    <Input
-                                      type="number"
-                                      className="mt-1.5"
-                                      value={step.memoryTopK ?? 5}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          memoryTopK: Number(e.target.value),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          )}
-
-                          {/* HTTP */}
-                          {step.type === "HTTP" && (
-                            <>
-                              <div>
-                                <Label>Method</Label>
-                                <Select
-                                  value={step.method}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, {
-                                      method: v as any,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="GET">GET</SelectItem>
-                                    <SelectItem value="POST">POST</SelectItem>
-                                    <SelectItem value="PUT">PUT</SelectItem>
-                                    <SelectItem value="DELETE">
-                                      DELETE
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div>
-                                <Label>URL</Label>
-                                <Input
-                                  className="mt-1.5"
-                                  value={step.url ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      url: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Body (JSON)</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px] font-mono text-sm"
-                                  value={step.body ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      body: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {/* DOCUMENT */}
-                          {step.type === "Document" && (
-                            <>
-                              <div>
-                                <Label>Document</Label>
-                                <Select
-                                  value={step.documentId}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { documentId: v })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select document" />
-                                  </SelectTrigger>
-
-                                  <SelectContent>
-                                    {documents.map((doc) => (
-                                      <SelectItem key={doc._id} value={doc._id}>
-                                        {doc.title || "Untitled"}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div>
-                                <Label>Query</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px]"
-                                  value={step.query ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      query: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-
-                              <div>
-                                <Label>Top K Chunks</Label>
-                                <Input
-                                  type="number"
-                                  className="mt-1.5"
-                                  value={step.topK ?? 4}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      topK: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {/* Delay */}
-                          {step.type === "Delay" && (
                             <div>
-                              <Label>Delay (seconds)</Label>
-                              <Input
-                                type="number"
-                                className="mt-1.5"
-                                value={step.delay ?? 0}
+                              <Label>System Prompt / Instruction</Label>
+                              <Textarea
+                                className="mt-1.5 min-h-[100px]"
+                                placeholder="Tell the model what to do with the input..."
+                                value={step.prompt ?? ""}
                                 onChange={(e) =>
                                   updateStep(step.id, {
-                                    delay: Number(e.target.value),
+                                    prompt: e.target.value,
                                   })
                                 }
                               />
                             </div>
                           )}
 
-                          {/* CONDITION */}
-                          {step.type === "Condition" && (
+                          {step.type === "Delay" && (
+                            <div>
+                              <Label>Delay duration (seconds)</Label>
+                              <Input
+                                type="number"
+                                className="mt-1.5"
+                                value={step.delay ?? 0}
+                                onChange={(e) =>
+                                  updateStep(step.id, {
+                                    delay: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                              />
+                            </div>
+                          )}
+
+                          {step.type === "HTTP" && (
                             <>
-                              <div>
-                                <Label>Condition Type</Label>
-                                <Select
-                                  value={step.conditionType}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, {
-                                      conditionType: v as any,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select type" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="boolean">
-                                      Boolean
-                                    </SelectItem>
-                                    <SelectItem value="sentiment">
-                                      Sentiment
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="col-span-1">
+                                  <Label>Method</Label>
+                                  <Select
+                                    value={step.method ?? "GET"}
+                                    onValueChange={(v) =>
+                                      updateStep(step.id, {
+                                        method: v as any,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="mt-1.5">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="GET">GET</SelectItem>
+                                      <SelectItem value="POST">POST</SelectItem>
+                                      <SelectItem value="PUT">PUT</SelectItem>
+                                      <SelectItem value="DELETE">
+                                        DELETE
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="col-span-2">
+                                  <Label>Endpoint URL</Label>
+                                  <Input
+                                    className="mt-1.5"
+                                    placeholder="https://api.example.com/data"
+                                    value={step.url ?? ""}
+                                    onChange={(e) =>
+                                      updateStep(step.id, {
+                                        url: e.target.value,
+                                      })
+                                    }
+                                  />
+                                </div>
                               </div>
 
-                              <div>
-                                <Label>Operator</Label>
-                                <Select
-                                  value={step.operator}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { operator: v as any })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select operator" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {step.conditionType === "boolean" && (
-                                      <>
-                                        <SelectItem value="isTrue">
-                                          is True
-                                        </SelectItem>
-                                        <SelectItem value="isFalse">
-                                          is False
-                                        </SelectItem>
-                                      </>
-                                    )}
-
-                                    {step.conditionType === "sentiment" && (
-                                      <>
-                                        <SelectItem value="isPositive">
-                                          is Positive
-                                        </SelectItem>
-                                        <SelectItem value="isNegative">
-                                          is Negative
-                                        </SelectItem>
-                                      </>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                              {step.method !== "GET" && (
+                                <div>
+                                  <Label>JSON Payload Body</Label>
+                                  <Textarea
+                                    className="mt-1.5 font-mono text-sm"
+                                    placeholder={`{\n  "key": "value"\n}`}
+                                    value={step.body ?? ""}
+                                    onChange={(e) =>
+                                      updateStep(step.id, {
+                                        body: e.target.value,
+                                      })
+                                    }
+                                  />
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -1323,19 +1094,48 @@ export default function WorkflowBuilderPage() {
                   ))}
                 </AnimatePresence>
 
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={addStep}
-                >
-                  <Plus className="mr-2 size-4" />
-                  Add Step
+                <Button className="w-full border-dashed" variant="outline" onClick={addStep}>
+                  <Plus className="mr-2 size-4" /> Add Execution Node Step
                 </Button>
               </div>
             )}
           </div>
         </main>
       </div>
+
+      {/* Intercept Navigation Custom Confirmation Modal Popup */}
+      <AnimatePresence>
+        {showExitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg"
+            >
+              <h2 className="text-xl font-bold">Unsaved Changes</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                You have modified your workflow pipeline configuration layouts. Leaving now will permanently discard all unsaved step transitions.
+              </p>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowExitModal(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setIsDirty(false);
+                    setShowExitModal(false);
+                    router.push(`/workflows/${id}`);
+                  }}
+                >
+                  Leave Anyway
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </AuthGuard>
   );
 }
