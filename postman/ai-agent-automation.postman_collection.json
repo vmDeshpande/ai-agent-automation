@@ -63,7 +63,7 @@
     },
     {
       "name": "Agents",
-      "description": "Endpoints for managing AI agents.",
+      "description": "Endpoints for creating, retrieving, updating, and deleting AI agents.",
       "item": [
         {
           "name": "Create Agent",
@@ -102,9 +102,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/agents/{{id}}",
+              "raw": "{{base_url}}/agents/{{agent_id}}",
               "host": ["{{base_url}}"],
-              "path": ["agents", "{{id}}"]
+              "path": ["agents", "{{agent_id}}"]
             }
           },
           "response": []
@@ -120,9 +120,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/agents/{{id}}",
+              "raw": "{{base_url}}/agents/{{agent_id}}",
               "host": ["{{base_url}}"],
-              "path": ["agents", "{{id}}"]
+              "path": ["agents", "{{agent_id}}"]
             }
           },
           "response": []
@@ -133,9 +133,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/agents/{{id}}",
+              "raw": "{{base_url}}/agents/{{agent_id}}",
               "host": ["{{base_url}}"],
-              "path": ["agents", "{{id}}"]
+              "path": ["agents", "{{agent_id}}"]
             }
           },
           "response": []
@@ -144,7 +144,7 @@
     },
     {
       "name": "Workflows",
-      "description": "Endpoints for constructing and driving executing multi-agent flows.",
+      "description": "Endpoints for creating, retrieving, updating, and deleting multi-agent workflows.",
       "item": [
         {
           "name": "Create Workflow",
@@ -188,9 +188,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/workflows/{{workflowId}}/steps",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}/steps",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{workflowId}}", "steps"]
+              "path": ["workflows", "{{workflow_id}}", "steps"]
             }
           },
           "response": []
@@ -206,9 +206,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/workflows/{{workflowId}}/add-task",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}/add-task",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{workflowId}}", "add-task"]
+              "path": ["workflows", "{{workflow_id}}", "add-task"]
             }
           },
           "response": []
@@ -224,9 +224,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/workflows/{{workflowId}}/assign-agent",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}/assign-agent",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{workflowId}}", "assign-agent"]
+              "path": ["workflows", "{{workflow_id}}", "assign-agent"]
             }
           },
           "response": []
@@ -237,9 +237,9 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/workflows/{{workflowId}}/run",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}/run",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{workflowId}}", "run"]
+              "path": ["workflows", "{{workflow_id}}", "run"]
             }
           },
           "response": []
@@ -250,9 +250,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/workflows/{{id}}",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{id}}"]
+              "path": ["workflows", "{{workflow_id}}"]
             }
           },
           "response": []
@@ -268,9 +268,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/workflows/{{id}}",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{id}}"]
+              "path": ["workflows", "{{workflow_id}}"]
             }
           },
           "response": []
@@ -281,9 +281,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/workflows/{{id}}",
+              "raw": "{{base_url}}/workflows/{{workflow_id}}",
               "host": ["{{base_url}}"],
-              "path": ["workflows", "{{id}}"]
+              "path": ["workflows", "{{workflow_id}}"]
             }
           },
           "response": []
@@ -292,7 +292,7 @@
     },
     {
       "name": "Tasks",
-      "description": "Endpoints for managing individual agent tasks.",
+      "description": "Endpoints for creating, retrieving, updating, and deleting individual agent execution tasks.",
       "item": [
         {
           "name": "Create Task",
@@ -301,7 +301,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"title\": \"\"\n}",
+              "raw": "{\n    \"name\": \"Sample Task\",\n    \"description\": \"Task description\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -331,9 +331,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/tasks/{{id}}",
+              "raw": "{{base_url}}/tasks/{{task_id}}",
               "host": ["{{base_url}}"],
-              "path": ["tasks", "{{id}}"]
+              "path": ["tasks", "{{task_id}}"]
             }
           },
           "response": []
@@ -345,13 +345,13 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"title\": \"\"\n}",
+              "raw": "{\n    \"name\": \"Sample Task\",\n    \"description\": \"Task description\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/tasks/{{id}}",
+              "raw": "{{base_url}}/tasks/{{task_id}}",
               "host": ["{{base_url}}"],
-              "path": ["tasks", "{{id}}"]
+              "path": ["tasks", "{{task_id}}"]
             }
           },
           "response": []
@@ -362,9 +362,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/tasks/{{id}}",
+              "raw": "{{base_url}}/tasks/{{task_id}}",
               "host": ["{{base_url}}"],
-              "path": ["tasks", "{{id}}"]
+              "path": ["tasks", "{{task_id}}"]
             }
           },
           "response": []
@@ -373,7 +373,7 @@
     },
     {
       "name": "Schedules",
-      "description": "Endpoints for scheduling tasks and cron jobs.",
+      "description": "Endpoints for creating, retrieving, updating, and deleting automation execution scheduling rules.",
       "item": [
         {
           "name": "Create Schedule",
@@ -382,7 +382,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"cronExpression\": \"\"\n}",
+              "raw": "{\n    \"cronExpression\": \"0 * * * *\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -412,9 +412,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/schedules/{{id}}",
+              "raw": "{{base_url}}/schedules/{{schedule_id}}",
               "host": ["{{base_url}}"],
-              "path": ["schedules", "{{id}}"]
+              "path": ["schedules", "{{schedule_id}}"]
             }
           },
           "response": []
@@ -426,13 +426,13 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"cronExpression\": \"\"\n}",
+              "raw": "{\n    \"cronExpression\": \"0 * * * *\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/schedules/{{id}}",
+              "raw": "{{base_url}}/schedules/{{schedule_id}}",
               "host": ["{{base_url}}"],
-              "path": ["schedules", "{{id}}"]
+              "path": ["schedules", "{{schedule_id}}"]
             }
           },
           "response": []
@@ -443,9 +443,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/schedules/{{id}}",
+              "raw": "{{base_url}}/schedules/{{schedule_id}}",
               "host": ["{{base_url}}"],
-              "path": ["schedules", "{{id}}"]
+              "path": ["schedules", "{{schedule_id}}"]
             }
           },
           "response": []
@@ -454,7 +454,7 @@
     },
     {
       "name": "Webhooks",
-      "description": "Endpoints for managing event-driven webhooks.",
+      "description": "Endpoints for creating, listing, and receiving event-driven webhook entry integrations.",
       "item": [
         {
           "name": "Create Webhook (Admin)",
@@ -463,7 +463,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"url\": \"\"\n}",
+              "raw": "{\n    \"url\": \"https://example.com/webhook\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -493,9 +493,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/webhooks/{{id}}",
+              "raw": "{{base_url}}/webhooks/{{webhook_id}}",
               "host": ["{{base_url}}"],
-              "path": ["webhooks", "{{id}}"]
+              "path": ["webhooks", "{{webhook_id}}"]
             }
           },
           "response": []
@@ -520,8 +520,140 @@
         }
       ]
     },
-    { "name": "Documents & RAG", "description": "Endpoints for document ingestion, vector embeddings, and Retrieval-Augmented Generation.", "item": [] },
-    { "name": "Memory", "description": "Endpoints for managing agent short-term and long-term memory states.", "item": [] },
+    {
+      "name": "Documents & RAG",
+      "description": "Endpoints for document upload, index tracking, contextual RAG search, and data purging.",
+      "item": [
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/documents/upload",
+              "host": ["{{base_url}}"],
+              "path": ["documents", "upload"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/documents",
+              "host": ["{{base_url}}"],
+              "path": ["documents"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat Contextually (RAG)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/documents/chat",
+              "host": ["{{base_url}}"],
+              "path": ["documents", "chat"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/documents/{{document_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["documents", "{{document_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/documents/{{document_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["documents", "{{document_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Memory",
+      "description": "Endpoints for parsing long-term session boundaries and wiping contextual state chains.",
+      "item": [
+        {
+          "name": "Get Global Memory Tracks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/memory",
+              "host": ["{{base_url}}"],
+              "path": ["memory"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Agent Memory States",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/memory/agents",
+              "host": ["{{base_url}}"],
+              "path": ["memory", "agents"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Specific Memory Frame",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/memory/{{memory_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["memory", "{{memory_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Wipe Target Agent Memory State",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/memory/agent/{{memory_agent_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["memory", "agent", "{{memory_agent_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
     { "name": "Settings", "description": "Endpoints for platform configuration and system settings.", "item": [] },
     { "name": "Logs", "description": "Endpoints for retrieving system and execution logs.", "item": [] },
     { "name": "Telemetry", "description": "Endpoints for monitoring system performance and usage metrics.", "item": [] }
