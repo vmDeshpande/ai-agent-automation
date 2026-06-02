@@ -1,0 +1,79 @@
+{
+  "info": {
+    "_postman_id": "ai-agent-automation-collection",
+    "name": "AI Agent Automation Platform",
+    "description": "Postman collection for the AI Agent Automation Platform built directly from the verified Express routing layer.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Endpoints for user authentication and session management.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"\",\n    \"email\": \"\",\n    \"password\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"\",\n    \"password\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Me (Profile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    { "name": "Agents", "description": "Endpoints for managing AI agents.", "item": [] },
+    { "name": "Workflows", "description": "Endpoints for constructing and driving executing multi-agent flows.", "item": [] },
+    { "name": "Tasks", "description": "Endpoints for managing execution tasks.", "item": [] },
+    { "name": "Schedules", "description": "Endpoints for controlling execution scheduling rules.", "item": [] },
+    { "name": "Webhooks", "description": "Endpoints for event subscription webhooks.", "item": [] },
+    { "name": "Documents & RAG", "description": "Endpoints for context file parsing and RAG matching operations.", "item": [] },
+    { "name": "Memory", "description": "Endpoints tracking runtime state boundaries.", "item": [] },
+    { "name": "Settings", "description": "Endpoints managing systemic toggle preferences.", "item": [] },
+    { "name": "Logs", "description": "Endpoints displaying platform diagnostics execution trails.", "item": [] },
+    { "name": "Telemetry", "description": "Endpoints presenting platform monitoring stats.", "item": [] }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  }
+}
