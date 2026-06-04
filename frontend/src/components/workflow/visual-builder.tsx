@@ -616,7 +616,14 @@ export default function VisualBuilder({
         onNodeClick={onNodeClick}
         proOptions={{ hideAttribution: true }}
         connectionLineStyle={{ strokeWidth: 2 }}
-        defaultEdgeOptions={{
+
+        // ---Added new code lines to support touch devices---
+        panOnDrag={true} 
+        panOnScroll={true}
+        selectionOnDrag={true}
+        // ---------------------------------------
+
+        defaultEdgeOptions={{@
           type: "default",
           animated: true,
           labelStyle: {

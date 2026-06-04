@@ -191,7 +191,8 @@ const WorkflowCard = memo(
   },
 );
 
-WorkflowCard.displayName = "WorkflowCard";
+
+WorkflowCard.displayName = "WorkflowCard"; 
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
