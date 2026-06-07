@@ -257,17 +257,6 @@ const WorkflowCard = memo(
               )}
             </div>
 
-          <DropdownMenuContent align="end">
-             <Link href={`/workflows/${workflow._id}/builder`}>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(workflow);
-                }}
-              >
-                Edit Workflow Details
-              </DropdownMenuItem>
-            </Link>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -275,15 +264,16 @@ const WorkflowCard = memo(
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onEdit(workflow);
-                  }}
-                >
-                  Edit Workflow Details
-                </DropdownMenuItem>
+                <Link href={`/workflows/${workflow._id}/builder`}>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(workflow);
+                    }}
+                  >
+                    Edit Workflow Details
+                  </DropdownMenuItem>
+                </Link>
                 <DropdownMenuItem
                   className="text-destructive"
                   onClick={(e) => {
@@ -295,27 +285,7 @@ const WorkflowCard = memo(
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
-
             </DropdownMenu>
-          </DropdownMenuContent>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 overflow-hidden opacity-0 max-h-0 transition-all duration-200 group-hover:opacity-100 group-hover:max-h-24">
-            <Button variant="outline" size="sm" onClick={() => onEdit(workflow)}>
-              Edit details
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onDelete(workflow._id);
-              }}
-            >
-              Delete
-            </Button>
           </div>
 
           <div className="mt-4 flex items-center justify-between">
@@ -693,6 +663,7 @@ export default function WorkflowsPage() {
                         onCopy={copyId}
                         onEdit={handleEditWorkflow}
                         onDelete={handleDeleteWorkflow}
+                        onUpdate={fetchWorkflows}
                       />
                     ))}
                   </div>
