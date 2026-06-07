@@ -260,7 +260,7 @@ const WorkflowCard = memo(
             </div>
 
           <DropdownMenuContent align="end">
-            <Link href={`/workflows/${workflow._id}/builder`}>
+             <Link href={`/workflows/${workflow._id}/builder`}>
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
@@ -270,7 +270,6 @@ const WorkflowCard = memo(
                 Edit Workflow Details
               </DropdownMenuItem>
             </Link>
-            <DropdownMenuItem
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -298,7 +297,9 @@ const WorkflowCard = memo(
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
+              
             </DropdownMenu>
+          </DropdownMenuContent>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 overflow-hidden opacity-0 max-h-0 transition-all duration-200 group-hover:opacity-100 group-hover:max-h-24">
