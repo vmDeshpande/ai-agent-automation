@@ -8,7 +8,6 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { Activity, Workflow, ListChecks, Bot, Calendar } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
 import { useApi } from "@/hooks/useApi";
-import { WorkflowList } from "@/components/workflow-list";
 
 /* -----------------------------
    Types

@@ -51,8 +51,6 @@ import {
   Plus,
   Pencil,
 } from "lucide-react";
-import Link from "next/link";
-import { FormEvent, memo, useCallback, useEffect, useState } from "react";
 
 // ─── Filter Utilities ──────────────────────────────────────────────
 function useDebounce<T>(value: T, delay = 300): T {
@@ -258,48 +256,37 @@ const WorkflowCard = memo(
                 </p>
               )}
             </div>
+          </div>
 
-          <DropdownMenuContent align="end">
-            <Link href={`/workflows/${workflow._id}/builder`}>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(workflow);
-                }}
-              >
-                Edit Workflow Details
-              </DropdownMenuItem>
-            </Link>
-            <DropdownMenuItem
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <Link href={`/workflows/${workflow._id}/builder`}>
                 <DropdownMenuItem
                   onClick={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
                     onEdit(workflow);
                   }}
                 >
                   Edit Workflow Details
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDelete(workflow._id);
-                  }}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              </Link>
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(workflow._id);
+                }}
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 overflow-hidden opacity-0 max-h-0 transition-all duration-200 group-hover:opacity-100 group-hover:max-h-24">
             <Button variant="outline" size="sm" onClick={() => onEdit(workflow)}>
