@@ -9,9 +9,46 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
-import { Pause, Play, RefreshCw, Terminal, X } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
 import { apiUrl } from "@/lib/api";
+
+type IconProps = {
+  className?: string;
+};
+
+const PauseIcon = ({ className }: IconProps) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M6 5.25h3v13.5H6zm9 0h3v13.5h-3z" />
+  </svg>
+);
+
+const PlayIcon = ({ className }: IconProps) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M8 5.25v13.5L19.5 12 8 5.25z" />
+  </svg>
+);
+
+const RefreshIcon = ({ className }: IconProps) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M20.25 8.625a8.625 8.625 0 0 0-15.75-2.25M3.75 15.375a8.625 8.625 0 0 0 15.75 2.25" />
+    <path d="M19.125 4.875v4.5h-4.5" />
+    <path d="M4.875 19.125v-4.5h4.5" />
+  </svg>
+);
+
+const TerminalIcon = ({ className }: IconProps) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M8 9.75l3 2.25-3 2.25" />
+    <path d="M14.25 15.75h5.25" />
+    <rect x="3.75" y="4.5" width="16.5" height="15" rx="2.25" />
+  </svg>
+);
+
+const XIcon = ({ className }: IconProps) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
 
 type LogLevel = "debug" | "info" | "success" | "warn" | "error";
 
