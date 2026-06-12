@@ -36,24 +36,23 @@ export function useApi<T>(endpoint: string): ApiState<T> {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const json = await res.json();
+      const json = await res.json() as Record<string, unknown>;
 
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Request failed");
+      if (!res.ok || json.ok === false) {
+        throw new Error((json.error as string) || "Request failed");
       }
 
-      const payload =
-        json.stats ??
+      const payload = (json.stats ??
         json.tasks ??
         json.task ??
         json.workflow ??
         json.agent ??
         json.settings ??
-        json;
+        json) as T;
 
       setData(payload);
-    } catch (err: any) {
-      setError(err.message ?? "Unknown error");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }

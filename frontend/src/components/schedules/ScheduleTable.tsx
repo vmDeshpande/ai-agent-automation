@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Trash } from "lucide-react";
 import { CronExpressionParser } from "cron-parser";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiUrl } from "@/lib/api";
 
 type Schedule = {
@@ -144,8 +145,40 @@ export default function ScheduleTable({
   }
 
   if (loading) {
-    return <p className="p-6 text-muted-foreground">Loading schedules…</p>;
-  }
+    return (
+    <div className="p-4">
+      <table className="w-full">
+        <tbody>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <tr key={i} className="border-b">
+              <td className="p-3">
+                <Skeleton className="h-4 w-32" />
+              </td>
+
+              <td className="p-3">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              </td>
+
+              <td className="p-3">
+                <Skeleton className="h-6 w-20" />
+              </td>
+
+              <td className="p-3">
+                <div className="flex gap-3">
+                  <Skeleton className="h-6 w-10" />
+                  <Skeleton className="h-8 w-8" />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
   if (!schedules.length) {
     return <p className="p-6 text-muted-foreground">No schedules created.</p>;

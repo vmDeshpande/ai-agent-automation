@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { apiUrl } from "@/lib/api";
-
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -67,21 +66,24 @@ export default function MemoryPage() {
   const inspectorScrollRef = useRef<HTMLDivElement | null>(null);
 
   async function fetchMemories() {
-    setLoading(true);
     const url = apiUrl("/memory?search=") + encodeURIComponent(search);
     const res = await fetch(url, {
       headers: {
         Authorization: "Bearer " + localStorage.getItem("token"),
       },
     });
-
+   
     const data = await res.json();
     if (data.ok) setMemories(data.memories);
     setLoading(false);
   }
 
   useEffect(() => {
-    fetchMemories();
+    const timeoutId = window.setTimeout(() => {
+      fetchMemories();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [search]);
 
   useEffect(() => {
@@ -182,7 +184,7 @@ export default function MemoryPage() {
                               </EmptyMedia>
                               <EmptyTitle>No memories found</EmptyTitle>
                               <EmptyDescription>
-                                Your filter parameter for "{search}" returned no historical semantic matches.
+                                Your filter parameter for &quot;{search}&quot; returned no historical semantic matches.
                               </EmptyDescription>
                             </EmptyHeader>
                             <EmptyContent>
@@ -207,7 +209,19 @@ export default function MemoryPage() {
                       </div>
                     )}
 
-                    {memories.map((m) => {
+                    {loading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <Card key={i} className="p-4">
+                          <div className="space-y-4">
+                            <Skeleton className="h-4 w-20" />
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-5/6" />
+                            <Skeleton className="h-4 w-2/3" />
+                          </div>
+                        </Card>
+                     ))
+                   ) : (
+                      memories.map((m) => {
                       const parsed = parseMemory(m.content);
 
                       return (
@@ -277,7 +291,7 @@ export default function MemoryPage() {
                           </div>
                         </Card>
                       );
-                    })}
+                    }))}
                   </div>
                 </ScrollArea>
               </CardContent>

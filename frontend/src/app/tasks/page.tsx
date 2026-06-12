@@ -9,6 +9,7 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, Trash2 } from "lucide-react";
+import {Skeleton} from "@/components/ui/skeleton"
 import { useAssistantContext } from "@/context/assistant-context";
 import {
   Pagination,
@@ -136,7 +137,7 @@ export default function TasksPage() {
           },
         }
       );
-
+      
       const data = await res.json();
 
       if (data.ok) {

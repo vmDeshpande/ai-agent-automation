@@ -5,31 +5,23 @@ import ReactFlow, {
   Background,
   addEdge,
   useNodesState,
-  useEdgesState,
   Connection,
   Node,
+  NodeDragHandler,
+  Edge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  NodeChange,
+  EdgeChange,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { apiUrl } from "@/lib/api";
 import { generateNodeId, generateEdgeId } from "@/utils/ids";
 import { duplicateNodesSafely } from "@/utils/graphValidation";
-import { Edge, applyNodeChanges, applyEdgeChanges } from "reactflow";
-import { X } from "lucide-react";
+import { X, AlertTriangle } from "lucide-react";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
-
-type StepType =
-  | "LLM"
-  | "HTTP"
-  | "Delay"
-  | "Tool"
-  | "Document"
-  | "Condition"
-  | "Switch"
-  | "GitHub"
-  | "Slack"
-  | "Discord";
-  
+import { StepType, ToolType, WorkflowNode, WorkflowEdge, WorkflowDocument, McpTool } from "@/types/workflow";
 
 type StepNode = {
   id: string;
@@ -39,11 +31,6 @@ type StepNode = {
     label: React.ReactElement;
   };
   style?: React.CSSProperties;
-};
-
-type CustomEdge = Edge & {
-  condition?: "true" | "false";
-  caseValue?: string;
 };
 
 const EDGE_STYLE = { strokeWidth: 2 };
@@ -58,6 +45,8 @@ function getNodeColor(type: string) {
       return "#2563eb"; // blue
     case "Tool":
       return "#f59e0b"; // orange
+    case "MCP":
+      return "#0f766e"; // teal
     case "Document":
       return "#16a34a"; // green
     case "Delay":
@@ -67,7 +56,7 @@ function getNodeColor(type: string) {
   }
 }
 
-function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
+function buildNodePreview(step: WorkflowNode | undefined, edges: WorkflowEdge[], allSteps: WorkflowNode[]) {
   const rows: { name: string; type: string }[] = [];
 
   if (!step) return rows;
@@ -97,17 +86,22 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
     rows.push({ name: "tool", type: "string" });
   }
 
+  if (step.type === "MCP") {
+    rows.push({ name: "server", type: step.serverId || "unset" });
+    rows.push({ name: "tool", type: step.toolName || "unset" });
+  }
+
   if (step.type === "Document") {
     rows.push({ name: "query", type: "string" });
     rows.push({ name: "topK", type: "number" });
   }
 
   if (step.type === "Condition") {
-    const trueEdge = (edges as CustomEdge[]).find(
+    const trueEdge = edges.find(
       (e) => e.source === step.id && e.condition === "true",
     );
 
-    const falseEdge = (edges as CustomEdge[]).find(
+    const falseEdge = edges.find(
       (e) => e.source === step.id && e.condition === "false",
     );
 
@@ -119,12 +113,12 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
   }
 
   if (step.type === "Switch") {
-    const outgoing = (edges as CustomEdge[]).filter(
+    const outgoing = edges.filter(
       (e) => e.source === step.id,
     );
 
     outgoing.forEach((edge) => {
-      const e = edge as CustomEdge;
+      const e = edge;
 
       const targetStep = allSteps.find((s) => s.id === e.target);
 
@@ -139,14 +133,15 @@ function buildNodePreview(step: any, edges: CustomEdge[], allSteps: any[]) {
 }
 
 function computeNodes(
-  steps: any[],
-  flowEdges: CustomEdge[],
-  onDeleteNode: (id: string) => void,
+  steps: WorkflowNode[],
+  flowEdges: WorkflowEdge[],
+  invalidNodeIds: Set<string> = new Set()
 ): StepNode[] {
   if (!steps?.length) return [];
 
   return steps.map((step, index) => {
     const schema = buildNodePreview(step, flowEdges, steps);
+    const hasError = invalidNodeIds.has(step.id);
 
     return {
       id: step.id,
@@ -159,21 +154,28 @@ function computeNodes(
               <span className="font-semibold truncate flex items-center gap-2">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: getNodeColor(step.type) }}
+                  style={{ background: hasError ? "#ef4444" : getNodeColor(step.type) }}
                 />
                 {step.name || "Untitled Step"}
               </span>
 
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDeleteNode(step.id);
-                }}
-                className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-1">
+                {hasError && <AlertTriangle className="size-4 text-red-500" />} 
+
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const deleteEvent = new CustomEvent("delete-workflow-node", {
+                      detail: { nodeId: step.id },
+                    });
+                    window.dispatchEvent(deleteEvent);
+                  }}
+                  className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="text-xs text-muted-foreground mb-2">
@@ -196,10 +198,10 @@ function computeNodes(
           </div>
         ),
       },
-      style: {
+style: {
         padding: "12px 16px",
         borderRadius: "12px",
-        border: `1px solid ${getNodeColor(step.type)}`,
+        border: `1px solid ${hasError ? '#ef4444' : getNodeColor(step.type)}`,
         background: "var(--card)",
         color: "var(--foreground)",
         fontSize: "14px",
@@ -208,7 +210,10 @@ function computeNodes(
         minWidth: 240,
         maxWidth: 240,
         textAlign: "center" as const,
-        boxShadow: `0 0 0 1px ${getNodeColor(step.type)}20, 0 2px 6px rgba(0,0,0,0.05)`,
+        boxShadow: hasError 
+          ? `0 0 0 2px rgba(239,68,68,0.3), 0 2px 6px rgba(0,0,0,0.05)`
+          : `0 0 0 1px ${getNodeColor(step.type)}20, 0 2px 6px rgba(0,0,0,0.05)`,
+        touchAction: "none", 
       },
     };
   });
@@ -220,29 +225,37 @@ export default function VisualBuilder({
   edges,
   onEdgesChange,
   onSave,
+  invalidNodeIds = [],
 }: {
-  steps: any[];
-  setSteps: React.Dispatch<React.SetStateAction<any[]>>;
-  edges: any[];
-  onEdgesChange: (edges: any[]) => void;
+  steps: WorkflowNode[];
+  setSteps: React.Dispatch<React.SetStateAction<WorkflowNode[]>>;
+  edges: WorkflowEdge[];
+  onEdgesChange: (edges: WorkflowEdge[]) => void;
   onSave?: () => void;
+  invalidNodeIds?: string[];
 }) {
   usePerformanceMonitor("VisualBuilder");
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const historyRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
-  const futureRef = useRef<{ steps: any[]; edges: CustomEdge[] }[]>([]);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [flowEdges, setFlowEdges] = useState<CustomEdge[]>(() => edges || []);
+  const historyRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
+  const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
+  const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
+  const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>(() => (edges as unknown as Edge[]) || []);
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
+  const selectedMcpTool = mcpTools.find(
+    (tool) =>
+      tool.serverId === selectedStep?.serverId &&
+      tool.name === selectedStep?.toolName,
+  );
 
   useEffect(() => {
-    onEdgesChange(flowEdges);
+    onEdgesChange(flowEdges as unknown as WorkflowEdge[]);
   }, [flowEdges, onEdgesChange]);
 
   const deleteNode = useCallback(
     (nodeId: string) => {
       setSteps((prev) => {
-        historyRef.current.push({ steps: [...prev], edges: [...flowEdges] });
+        historyRef.current.push({ steps: [...prev], edges: [...flowEdges] as unknown as WorkflowEdge[] });
         futureRef.current = [];
         return prev.filter((s) => s.id !== nodeId);
       });
@@ -251,16 +264,13 @@ export default function VisualBuilder({
       );
       setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
     },
-    [setSteps],
+    [setSteps, flowEdges],
   );
 
-  const [computedNodes, setComputedNodes] = useState(() =>
-    computeNodes(steps, flowEdges, deleteNode),
-  );
-
-  useEffect(() => {
-    setComputedNodes(computeNodes(steps, flowEdges, deleteNode));
-  }, [steps, flowEdges, deleteNode]);
+  const computedNodes = useMemo(() => {
+    const nodesWithErrorsSet = new Set(invalidNodeIds);
+    return computeNodes(steps, flowEdges as unknown as WorkflowEdge[], nodesWithErrorsSet);
+  }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
 
@@ -272,6 +282,17 @@ export default function VisualBuilder({
       }),
     );
   }, [computedNodes, setNodes]);
+
+  useEffect(() => {
+    const handleNodeDelete = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.nodeId) {
+        deleteNode(customEvent.detail.nodeId);
+      }
+    };
+    window.addEventListener("delete-workflow-node", handleNodeDelete);
+    return () => window.removeEventListener("delete-workflow-node", handleNodeDelete);
+  }, [deleteNode]);
 
   /* ---------- KEYBOARD SHORTCUT DUPLICATION SAFETY ---------- */
   useEffect(() => {
@@ -302,7 +323,7 @@ export default function VisualBuilder({
           target: idMap.get(edge.target) || edge.target,
         }));
 
-        historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+        historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
         futureRef.current = [];
         setSteps((prev) => [...prev, ...clonedSteps]);
         if (clonedEdges.length > 0) {
@@ -343,9 +364,9 @@ export default function VisualBuilder({
         e.preventDefault();
         if (historyRef.current.length === 0) return;
         const snapshot = historyRef.current.pop()!;
-        futureRef.current.push({ steps, edges: flowEdges });
+        futureRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
-        setFlowEdges(snapshot.edges);
+        setFlowEdges(snapshot.edges as unknown as Edge[]);
         setSelectedNode(null);
         return;
       }
@@ -354,9 +375,9 @@ export default function VisualBuilder({
         e.preventDefault();
         if (futureRef.current.length === 0) return;
         const snapshot = futureRef.current.pop()!;
-        historyRef.current.push({ steps, edges: flowEdges });
+        historyRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
-        setFlowEdges(snapshot.edges);
+        setFlowEdges(snapshot.edges as unknown as Edge[]);
         setSelectedNode(null);
         return;
       }
@@ -374,19 +395,24 @@ export default function VisualBuilder({
 
   /* ---------- EVENTS ---------- */
 
-  const onNodeClick = useCallback((_: any, node: Node) => {
+  const onNodeClick = useCallback((_: React.MouseEvent | null, node: Node) => {
     setSelectedNode(node);
   }, []);
 
-  const handleEdgesDelete = useCallback((deletedEdges: any[]) => {
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+  const onNodeDragStart: NodeDragHandler = useCallback((_event, _node) => {
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
+    futureRef.current = [];
+  }, [steps, flowEdges]);
+
+  const handleEdgesDelete = useCallback((deletedEdges: Edge[]) => {
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setFlowEdges((eds) =>
       eds.filter((edge) => !deletedEdges.some((d) => d.id === edge.id)),
     );
   }, [steps, flowEdges]);
 
-  const onNodesChange = useCallback((changes: any) => {
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((nds) => {
       const updated = applyNodeChanges(changes, nds);
 
@@ -414,14 +440,14 @@ export default function VisualBuilder({
     });
   }, [setNodes, setSteps]);
 
-  const handleEdgesChange = useCallback((changes: any) => {
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     const hasStructuralChange = changes.some(
-      (c: any) => c.type !== "select" && c.type !== "reset",
+      (c) => c.type !== "select" && c.type !== "reset",
     );
 
     if (!hasStructuralChange) return;
 
-    setFlowEdges((eds) => applyEdgeChanges(changes, eds));
+    setFlowEdges((eds) => applyEdgeChanges(changes, eds) as Edge[]);
   }, []);
 
   const onConnect = useCallback((params: Connection) => {
@@ -455,7 +481,7 @@ export default function VisualBuilder({
       const value = userInput.trim();
 
       const alreadyExists = flowEdges.some(
-        (e) => e.source === params.source && e.caseValue === value,
+        (e) => e.source === params.source && (e as unknown as WorkflowEdge).caseValue === value,
       );
 
       if (alreadyExists) {
@@ -465,44 +491,46 @@ export default function VisualBuilder({
 
       caseValue = value;
     }
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setFlowEdges((eds) => {
       let filtered = eds;
 
       if (isCondition && condition) {
-        filtered = (eds as CustomEdge[]).filter(
-          (e) => !(e.source === params.source && e.condition === condition),
+        filtered = eds.filter(
+          (e) => !((e as unknown as WorkflowEdge).source === params.source && (e as unknown as WorkflowEdge).condition === condition),
         );
       }
 
-      const newEdge = {
+      const newEdge: WorkflowEdge = {
         id: generateEdgeId(), // ✅ Guaranteed distinct execution keys
         ...params,
+        source: params.source ?? "",
+        target: params.target ?? "",
         animated: true,
         style: EDGE_STYLE,
         label: caseValue || condition?.toUpperCase() || "",
-        condition,
-        caseValue,
+        condition: condition ?? undefined,
+        caseValue: caseValue ?? undefined,
       };
 
-      return addEdge(newEdge, filtered);
+      return addEdge(newEdge as unknown as Edge, filtered);
     });
   }, [steps, flowEdges]);
 
-  const updateStep = useCallback((stepId: string, patch: any) => {
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+  const updateStep = useCallback((stepId: string, patch: Partial<WorkflowNode>) => {
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setSteps((prev) =>
       prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
     );
   }, [steps, flowEdges, setSteps]);
 
-  const updateNodeLabel = useCallback((stepId: string, name: string, type: string) => {
+  const updateNodeLabel = useCallback((stepId: string, name: string, type: StepType) => {
     const step = steps.find((s) => s.id === stepId);
     if (!step) return;
 
-    const schema = buildNodePreview({ ...step, name, type }, flowEdges, steps);
+    const schema = buildNodePreview({ ...step, name, type }, flowEdges as unknown as WorkflowEdge[], steps);
 
     setNodes((nds) =>
       nds.map((n) =>
@@ -518,7 +546,10 @@ export default function VisualBuilder({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteNode(stepId);
+                          const deleteEvent = new CustomEvent("delete-workflow-node", {
+                            detail: { nodeId: stepId },
+                          });
+                          window.dispatchEvent(deleteEvent);
                         }}
                         className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
                       >
@@ -550,7 +581,7 @@ export default function VisualBuilder({
           : n,
       ),
     );
-  }, [steps, flowEdges, deleteNode, setNodes]);
+  }, [steps, flowEdges, setNodes]);
 
   useEffect(() => {
     async function fetchDocuments() {
@@ -572,6 +603,26 @@ export default function VisualBuilder({
   }, []);
 
   useEffect(() => {
+    async function fetchMcpTools() {
+      try {
+        const res = await fetch(apiUrl("/mcp/tools"), {
+          headers: {
+            Authorization: "Bearer " + localStorage.getItem("token"),
+          },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setMcpTools(data.tools || []);
+        }
+      } catch (err) {
+        console.error("Failed to load MCP tools", err);
+      }
+    }
+
+    fetchMcpTools();
+  }, []);
+
+  useEffect(() => {
     setNodes((nds) => {
       let changed = false;
       const next = nds.map((node) => {
@@ -579,13 +630,18 @@ export default function VisualBuilder({
         if (!step) return node;
 
         const isSelected = selectedNode?.id === node.id;
+        const borderString = String(node.style?.border || "");
+        const isInvalid = borderString.includes('#ef4444') || borderString.includes('rgb(239, 68');
+        
+        const baseColor = isInvalid ? '#ef4444' : getNodeColor(step.type);
+
         const border = isSelected
-          ? "2px solid #3b82f6"
-          : `1px solid ${getNodeColor(step.type)}`;
+          ? `2px solid ${isInvalid ? '#dc2626' : '#3b82f6'}`
+          : `1px solid ${baseColor}`;
 
         const boxShadow = isSelected
-          ? "0 0 0 2px rgba(59,130,246,.35), 0 4px 12px rgba(0,0,0,.25)"
-          : `0 0 0 1px ${getNodeColor(step.type)}20, 0 2px 6px rgba(0,0,0,0.05)`;
+          ? `0 0 0 2px ${isInvalid ? 'rgba(220,38,38,.35)' : 'rgba(59,130,246,.35)'}, 0 4px 12px rgba(0,0,0,.25)`
+          : `0 0 0 1px ${baseColor}20, 0 2px 6px rgba(0,0,0,0.05)`;
 
         if (
           node.style?.border === border &&
@@ -637,7 +693,7 @@ export default function VisualBuilder({
           </div>
         ),
       },
-      style: {
+ style: {
         padding: "12px 16px",
         borderRadius: "12px",
         border: `1px solid ${getNodeColor("LLM")}`,
@@ -650,10 +706,11 @@ export default function VisualBuilder({
         maxWidth: 240,
         textAlign: "center" as const,
         boxShadow: `0 0 0 1px ${getNodeColor("LLM")}20, 0 2px 6px rgba(0,0,0,0.05)`,
+        touchAction: "none", 
       },
     };
 
-    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] });
+    historyRef.current.push({ steps: [...steps], edges: [...flowEdges] as unknown as WorkflowEdge[] });
     futureRef.current = [];
     setNodes((n) => [...n, node]);
     setSteps((prev) => [
@@ -681,11 +738,13 @@ export default function VisualBuilder({
       <ReactFlow
         nodes={nodes}
         edges={flowEdges}
+        nodesDraggable={true}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
         onEdgesChange={handleEdgesChange}
         onEdgesDelete={handleEdgesDelete}
         onNodeClick={onNodeClick}
+        onNodeDragStart={onNodeDragStart}
         proOptions={{ hideAttribution: true }}
         connectionLineStyle={{ strokeWidth: 2 }}
         defaultEdgeOptions={{
@@ -762,6 +821,7 @@ export default function VisualBuilder({
                 <option value="HTTP">HTTP</option>
                 <option value="Delay">Delay</option>
                 <option value="Tool">Tool</option>
+                <option value="MCP">MCP</option>
                 <option value="Document">Document</option>
                 <option value="Condition">Condition</option>
                 <option value="Switch">Switch</option>
@@ -850,7 +910,7 @@ export default function VisualBuilder({
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
                     value={selectedStep.method || ""}
                     onChange={(e) =>
-                      updateStep(selectedStep.id, { method: e.target.value })
+                      updateStep(selectedStep.id, { method: e.target.value as "GET" | "POST" | "PUT" | "DELETE" })
                     }
                   >
                     <option value="" disabled>Select method</option>
@@ -870,7 +930,7 @@ export default function VisualBuilder({
                   className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
                   value={selectedStep.tool || ""}
                   onChange={(e) =>
-                    updateStep(selectedStep.id, { tool: e.target.value })
+                    updateStep(selectedStep.id, { tool: e.target.value as ToolType })
                   }
                 >
                   <option value="" disabled>Select tool</option>
@@ -879,6 +939,97 @@ export default function VisualBuilder({
                   <option value="browser">Browser</option>
                 </select>
               </div>
+            )}
+
+            {selectedStep.type === "MCP" && (
+              <>
+                <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
+                  External MCP tools are discovered from your configured MCP
+                  servers in Settings.
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Server</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.serverId || ""}
+                    onChange={(e) => {
+                      updateStep(selectedStep.id, {
+                        serverId: e.target.value,
+                        toolName: "",
+                      });
+                    }}
+                  >
+                    <option value="" disabled>Select server</option>
+                    {Array.from(
+                      new Map(
+                        mcpTools.map((tool) => [
+                          tool.serverId,
+                          tool.serverName || tool.serverId,
+                        ]),
+                      ).entries(),
+                    ).map(([serverId, serverName]) => (
+                      <option key={serverId} value={serverId}>
+                        {serverName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Tool</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.toolName || ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { toolName: e.target.value })
+                    }
+                    disabled={!selectedStep.serverId}
+                  >
+                    <option value="" disabled>Select tool</option>
+                    {mcpTools
+                      .filter((tool) => tool.serverId === selectedStep.serverId)
+                      .map((tool) => (
+                        <option key={tool.id} value={tool.name}>
+                          {tool.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">
+                    Timeout (ms)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
+                    value={selectedStep.timeoutMs || 30000}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        timeoutMs: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">
+                    Arguments (JSON)
+                  </label>
+                  <textarea
+                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background min-h-[140px] font-mono text-xs"
+                    value={selectedStep.arguments || "{\n  \n}"}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { arguments: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="rounded-lg border border-muted p-3">
+                  <div className="text-xs font-medium mb-2">Tool Schema</div>
+                  <pre className="text-[11px] leading-5 whitespace-pre-wrap break-words text-muted-foreground">
+                    {selectedMcpTool
+                      ? JSON.stringify(selectedMcpTool.inputSchema, null, 2)
+                      : "Select an MCP tool to inspect its input schema."}
+                  </pre>
+                </div>
+              </>
             )}
 
             {selectedStep.type === "Tool" && selectedStep.tool === "email" && (

@@ -14,15 +14,15 @@ This project aims to be a **clear, deterministic, and production-oriented AI wor
 
 ---
 
-## 🏗 Project Structure
+## 🏗 Codebase Architecture Overview
 
-```text
-backend/     → API, agents, workflow engine, scheduler
-frontend/    → Next.js dashboard UI
-infra/       → Docker / infra configs
-scripts/     → Dev & utility scripts
-workflows/   → Example workflow definitions
-```
+The repository is structured as a monorepo containing distinct services that communicate over REST and MongoDB:
+
+* **`backend/`**: Node.js/Express service housing the core Workflow Engine, Agent Runner, and API routes.
+* **`frontend/`**: Next.js application providing the visual dashboard, workflow builder, and memory management UI.
+* **`infra/`**: Docker Compose configurations to spin up the entire stack locally.
+* **`scripts/`**: Utility scripts for database migrations, telemetry testing, and environment setup.
+* **`workflows/`**: Seed data and example JSON definitions for testing the execution engine.
 
 ---
 
@@ -57,6 +57,22 @@ cp .env.example .env
 npm install
 npm run dev
 ```
+
+### Docker Workflow
+
+```bash
+cd infra
+cp .env.example .env
+docker compose up --build
+```
+
+---
+
+## 🔄 Common Development Workflows
+
+* **Testing a New Tool:** Add tool logic in `backend/tools/`, register it in the Tool Registry, and create a test workflow in `workflows/` to execute it locally.
+* **UI Component Development:** Start only the `frontend/` process and mock API responses, or run the full Docker stack to interact with live agent executions.
+* **Agent Prompt Tuning:** Modify system prompts in `backend/agents/` and use the UI to trigger standard benchmark workflows.
 
 ---
 

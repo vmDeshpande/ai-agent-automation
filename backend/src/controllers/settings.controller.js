@@ -25,10 +25,18 @@ async function getSettings(req, res) {
       huggingface: !!process.env.HF_API_KEY,
     };
 
+    const mcpRuntime = {
+      envEnabled: process.env.MCP_ENABLED !== "false",
+      configPath: process.env.MCP_CONFIG_PATH || null,
+      hasConfigJson: Boolean(process.env.MCP_CONFIG_JSON),
+      hasServerUrl: Boolean(process.env.MCP_SERVER_URL),
+    };
+
     res.json({
       ok: true,
       settings: settingsObj,          // stored user settings (no override)
       availableProviders,             // runtime availability for UI
+      mcpRuntime,
     });
   } catch (err) {
     console.error("getSettings error", err);
@@ -45,6 +53,7 @@ async function updateSettings(req, res) {
     if (req.body.scheduler) update.scheduler = req.body.scheduler;
     if (req.body.assistant) update.assistant = req.body.assistant;
     if (req.body.documentChat) update.documentChat = req.body.documentChat;
+    if (req.body.mcp) update.mcp = req.body.mcp;
 
     if (req.body.assistant?.provider) {
       const provider = req.body.assistant.provider;

@@ -260,7 +260,10 @@ async function getDocument(req, res) {
 
     const { id } = req.params;
 
-    const document = await Document.findById(id).lean();
+    const document = await Document.findOne({
+      _id: id,
+      userId: req.user._id
+    }).lean();
 
     if (!document) {
 

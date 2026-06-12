@@ -17,7 +17,9 @@ import {
   Circle,
   XCircle,
   Download,
+  History,
 } from "lucide-react";
+import VersionHistoryDialog from "@/components/workflow/version-history-dialog";
 import {
   Select,
   SelectContent,
@@ -27,21 +29,11 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
+import { WorkflowPayload as Workflow, BackendStep as WorkflowStep, WorkflowAgent as Agent } from "@/types/workflow";
 
 interface CreateTaskModalProps {
   workflowId: string;
   refreshWorkflow: () => void;
-}
-
-type Agent = {
-  _id: string;
-  name: string;
-};
-
-interface Task {
-  _id: string;
-  name: string;
-  status: "pending" | "running" | "completed" | "failed";
 }
 
 interface StepResult {
@@ -58,27 +50,7 @@ interface Task {
   stepResults?: StepResult[];
 }
 
-interface WorkflowStep {
-  stepId: string;
-  type: string;
-  name?: string;
-  prompt?: string;
-  config?: string;
-}
-
-type TaskRef = string | { _id: string };
-
-interface Workflow {
-  _id: string;
-  name: string;
-  description?: string;
-  status: string;
-  agentId?: string;
-  tasks?: TaskRef[]; // ✅ FIX
-  metadata?: {
-    steps?: WorkflowStep[];
-  };
-}
+// Centralized types imported from @/types/workflow
 
 function getStepIcon(status: string) {
   switch (status) {
@@ -142,7 +114,7 @@ function normalizeStepType(type: string) {
   }
 }
 
-function getStepDescription(step: any) {
+function getStepDescription(step: WorkflowStep) {
   const type = (step.type || "").toLowerCase();
 
   /* ---------- LLM ---------- */
@@ -202,10 +174,11 @@ export default function WorkflowDetailPage() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [tasks, setTasks] = useState<string[]>([]);
   const [latestTask, setLatestTask] = useState<Task | null>(null);
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const { addToast } = useToast();
 
   function getStepStatus(stepId: string): "pending" | "completed" | "failed" {
@@ -505,6 +478,11 @@ export default function WorkflowDetailPage() {
               </Button>
             </Link>
 
+            <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
+              <History className="mr-2 size-4" />
+              Version History
+            </Button>
+
             <Button variant="outline" size="sm" onClick={exportWorkflow}>
               <Download className="mr-2 size-4" />
               Export Workflow
@@ -559,6 +537,13 @@ export default function WorkflowDetailPage() {
               )}
             </div>
           </Card>
+
+          <VersionHistoryDialog
+            workflowId={workflow._id}
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            onRollbackSuccess={fetchWorkflow}
+          />
         </div>
       </main>
     </div>

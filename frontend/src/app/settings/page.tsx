@@ -56,6 +56,32 @@ type DocumentChatSettings = {
   temperature: number;
 };
 
+type McpServerSettings = {
+  id: string;
+  name: string;
+  transport: "stdio" | "streamable-http";
+  command: string;
+  args: string[];
+  url: string;
+  headers: Record<string, string>;
+  env: Record<string, string>;
+  enabled: boolean;
+  autoDiscover: boolean;
+  timeoutMs: number;
+};
+
+type McpSettings = {
+  enabled: boolean;
+  servers: McpServerSettings[];
+};
+
+type McpRuntimeState = {
+  envEnabled: boolean;
+  configPath: string | null;
+  hasConfigJson: boolean;
+  hasServerUrl: boolean;
+};
+
 type TelemetryMetrics = {
   taskRuns: number;
   workflowExecutions: number;
@@ -81,6 +107,7 @@ type SystemSettings = {
   };
   assistant: AssistantSettings;
   documentChat: DocumentChatSettings;
+  mcp: McpSettings;
 };
 
 const PROVIDER_LABELS: Record<AssistantProvider, string> = {
@@ -127,7 +154,55 @@ const DEFAULT_SETTINGS: SystemSettings = {
     topK: 3,
     temperature: 0.2,
   },
+  mcp: {
+    enabled: false,
+    servers: [],
+  },
 };
+
+const DEFAULT_MCP_RUNTIME: McpRuntimeState = {
+  envEnabled: true,
+  configPath: null,
+  hasConfigJson: false,
+  hasServerUrl: false,
+};
+
+function createEmptyMcpServer(): McpServerSettings {
+  return {
+    id: `mcp-${Date.now()}`,
+    name: "New MCP Server",
+    transport: "stdio",
+    command: "",
+    args: [],
+    url: "",
+    headers: {},
+    env: {},
+    enabled: true,
+    autoDiscover: true,
+    timeoutMs: 30000,
+  };
+}
+
+function toKeyValueText(value: Record<string, string>) {
+  return Object.entries(value || {})
+    .map(([key, entry]) => `${key}=${entry}`)
+    .join("\n");
+}
+
+function fromKeyValueText(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((acc, line) => {
+      const idx = line.indexOf("=");
+      if (idx === -1) return acc;
+      const key = line.slice(0, idx).trim();
+      const entry = line.slice(idx + 1).trim();
+      if (key) acc[key] = entry;
+      return acc;
+    }, {});
+}
 
 /* -------------------------
    Theme transition helper
@@ -167,9 +242,13 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<SystemSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [savingWorker, setSavingWorker] = useState(false);
+  const [savingMcp, setSavingMcp] = useState(false);
   const { theme, setTheme } = useTheme();
   const { addToast } = useToast();
   const { setMode } = useAssistantContext();
+  const [mcpRuntime, setMcpRuntime] = useState<McpRuntimeState>(
+    DEFAULT_MCP_RUNTIME,
+  );
 
   const [availableProviders, setAvailableProviders] = useState<{
     ollama?: boolean;
@@ -208,6 +287,7 @@ export default function SettingsPage() {
       if (data.ok && data.settings) {
         // 🔥 Set available providers from backend
         setAvailableProviders(data.availableProviders || {});
+        setMcpRuntime(data.mcpRuntime || DEFAULT_MCP_RUNTIME);
 
         const merged: SystemSettings = {
           ...DEFAULT_SETTINGS,
@@ -223,6 +303,14 @@ export default function SettingsPage() {
           assistant: {
             ...DEFAULT_SETTINGS.assistant,
             ...data.settings.assistant,
+          },
+          documentChat: {
+            ...DEFAULT_SETTINGS.documentChat,
+            ...data.settings.documentChat,
+          },
+          mcp: {
+            ...DEFAULT_SETTINGS.mcp,
+            ...data.settings.mcp,
           },
         };
 
@@ -327,6 +415,78 @@ export default function SettingsPage() {
     } finally {
       setSavingWorker(false);
     }
+  }
+
+  async function saveMcpSettings() {
+    try {
+      setSavingMcp(true);
+
+      const res = await fetch(apiUrl("/settings"), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + localStorage.getItem("token"),
+        },
+        body: JSON.stringify({
+          mcp: settings.mcp,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || "Failed to save MCP settings");
+      }
+
+      addToast({
+        type: "success",
+        title: "MCP Settings Saved",
+        description: "Your MCP configuration was updated successfully.",
+      });
+    } catch (err) {
+      console.error("Failed to save MCP settings", err);
+      addToast({
+        type: "error",
+        title: "MCP Save Failed",
+        description: "Could not update MCP configuration.",
+      });
+    } finally {
+      setSavingMcp(false);
+    }
+  }
+
+  function updateMcpServer(
+    serverId: string,
+    patch: Partial<McpServerSettings>,
+  ) {
+    setSettings((prev) => ({
+      ...prev,
+      mcp: {
+        ...prev.mcp,
+        servers: prev.mcp.servers.map((server) =>
+          server.id === serverId ? { ...server, ...patch } : server,
+        ),
+      },
+    }));
+  }
+
+  function removeMcpServer(serverId: string) {
+    setSettings((prev) => ({
+      ...prev,
+      mcp: {
+        ...prev.mcp,
+        servers: prev.mcp.servers.filter((server) => server.id !== serverId),
+      },
+    }));
+  }
+
+  function addMcpServer() {
+    setSettings((prev) => ({
+      ...prev,
+      mcp: {
+        ...prev.mcp,
+        servers: [...prev.mcp.servers, createEmptyMcpServer()],
+      },
+    }));
   }
 
   /* -------------------------
@@ -834,6 +994,232 @@ export default function SettingsPage() {
                           });
                         }}
                       />
+                    </div>
+                  </Card>
+                </motion.div>
+
+                {/* MCP */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="md:col-span-2 lg:col-span-3"
+                >
+                  <Card className="p-6 space-y-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold">MCP Servers</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Configure local stdio and remote streamable HTTP MCP
+                          servers for workflow steps.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right text-xs text-muted-foreground">
+                          <div>Env enabled: {mcpRuntime.envEnabled ? "Yes" : "No"}</div>
+                          <div>
+                            Env config:
+                            {mcpRuntime.configPath
+                              ? ` ${mcpRuntime.configPath}`
+                              : mcpRuntime.hasConfigJson || mcpRuntime.hasServerUrl
+                                ? " inline"
+                                : " none"}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={!!settings.mcp.enabled}
+                          onCheckedChange={(checked) =>
+                            setSettings((prev) => ({
+                              ...prev,
+                              mcp: {
+                                ...prev.mcp,
+                                enabled: checked,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button type="button" variant="outline" onClick={addMcpServer}>
+                        Add Server
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={saveMcpSettings}
+                        disabled={savingMcp}
+                      >
+                        {savingMcp ? "Saving…" : "Save MCP Settings"}
+                      </Button>
+                    </div>
+
+                    {settings.mcp.servers.length === 0 && (
+                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                        No MCP servers configured yet.
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      {settings.mcp.servers.map((server) => (
+                        <div key={server.id} className="rounded-xl border p-4 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium">{server.name || server.id}</div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => removeMcpServer(server.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                              <Label>ID</Label>
+                              <Input
+                                value={server.id}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, { id: e.target.value })
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Name</Label>
+                              <Input
+                                value={server.name}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, { name: e.target.value })
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Transport</Label>
+                              <select
+                                className="w-full border rounded-md px-3 py-2 bg-background"
+                                value={server.transport}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    transport: e.target.value as
+                                      | "stdio"
+                                      | "streamable-http",
+                                  })
+                                }
+                              >
+                                <option value="stdio">stdio</option>
+                                <option value="streamable-http">
+                                  streamable-http
+                                </option>
+                              </select>
+                            </div>
+                            <div>
+                              <Label>Timeout (ms)</Label>
+                              <Input
+                                type="number"
+                                value={server.timeoutMs}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    timeoutMs: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          {server.transport === "stdio" ? (
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                              <div>
+                                <Label>Command</Label>
+                                <Input
+                                  value={server.command}
+                                  onChange={(e) =>
+                                    updateMcpServer(server.id, {
+                                      command: e.target.value,
+                                    })
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Label>Args (space-separated)</Label>
+                                <Input
+                                  value={server.args.join(" ")}
+                                  onChange={(e) =>
+                                    updateMcpServer(server.id, {
+                                      args: e.target.value
+                                        .split(" ")
+                                        .map((item) => item.trim())
+                                        .filter(Boolean),
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <Label>URL</Label>
+                              <Input
+                                value={server.url}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, { url: e.target.value })
+                                }
+                              />
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                              <Label>Headers</Label>
+                              <textarea
+                                className="w-full min-h-[120px] border rounded-md px-3 py-2 bg-background font-mono text-xs"
+                                value={toKeyValueText(server.headers)}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    headers: fromKeyValueText(e.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                            <div>
+                              <Label>Environment</Label>
+                              <textarea
+                                className="w-full min-h-[120px] border rounded-md px-3 py-2 bg-background font-mono text-xs"
+                                value={toKeyValueText(server.env)}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    env: fromKeyValueText(e.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-6">
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={server.enabled}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    enabled: e.target.checked,
+                                  })
+                                }
+                              />
+                              Enabled
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={server.autoDiscover}
+                                onChange={(e) =>
+                                  updateMcpServer(server.id, {
+                                    autoDiscover: e.target.checked,
+                                  })
+                                }
+                              />
+                              Auto-discover tools
+                            </label>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </Card>
                 </motion.div>

@@ -26,7 +26,10 @@ async function createTask(req, res) {
     let agentId = null;
 
     if (workflowId) {
-      workflow = await Workflow.findById(workflowId);
+      workflow = await Workflow.findOne({
+        _id: workflowId,
+        userId: req.user._id
+      });
       if (!workflow) {
         return sendError(res, 404, "workflow_not_found");
       }

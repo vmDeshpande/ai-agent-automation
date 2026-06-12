@@ -1,4 +1,27 @@
+const mongoose = require("mongoose");
+const Agent = require("../models/agent.model");
 const AgentMemory = require("../models/agentMemory.model");
+
+function sendError(res, code, error) {
+  return res.status(code).json({ ok: false, error });
+}
+
+function getAuthenticatedUserId(req) {
+  return req.user?._id || req.user?.id;
+}
+
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
+async function findOwnedAgent(agentId, userId) {
+  if (!agentId || !isValidObjectId(agentId)) return null;
+
+  return Agent.findOne({
+    _id: agentId,
+    userId
+  }).select("_id name");
+}
 
 /* -----------------------------
    List Memories
@@ -6,11 +29,27 @@ const AgentMemory = require("../models/agentMemory.model");
 
 async function listMemories(req, res) {
   try {
-    const { agentId, search } = req.query;
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) return sendError(res, 401, "unauthorized");
 
+    const { agentId, search } = req.query;
     const filter = {};
 
-    if (agentId) filter.agentId = agentId;
+    if (agentId) {
+      const agent = await findOwnedAgent(agentId, userId);
+      if (!agent) return sendError(res, 403, "forbidden");
+
+      filter.agentId = agent._id;
+    } else {
+      const ownedAgents = await Agent.find({ userId }).select("_id").lean();
+      const ownedAgentIds = ownedAgents.map((agent) => agent._id);
+
+      if (ownedAgentIds.length === 0) {
+        return res.json({ ok: true, memories: [] });
+      }
+
+      filter.agentId = { $in: ownedAgentIds };
+    }
 
     if (search) {
       filter.content = {
@@ -26,7 +65,7 @@ async function listMemories(req, res) {
       .populate("agentId", "name")
       .lean();
 
-    res.json({
+    return res.json({
       ok: true,
       memories
     });
@@ -35,7 +74,7 @@ async function listMemories(req, res) {
 
     console.error("listMemories error", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: "memory_fetch_failed"
     });
@@ -50,8 +89,22 @@ async function listMemories(req, res) {
 
 async function listAgents(req, res) {
   try {
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) return sendError(res, 401, "unauthorized");
+
+    const ownedAgents = await Agent.find({ userId }).select("_id").lean();
+    const ownedAgentIds = ownedAgents.map((agent) => agent._id);
+
+    if (ownedAgentIds.length === 0) {
+      return res.json({ ok: true, agents: [] });
+    }
 
     const agents = await AgentMemory.aggregate([
+      {
+        $match: {
+          agentId: { $in: ownedAgentIds }
+        }
+      },
       {
         $group: {
           _id: "$agentId",
@@ -60,7 +113,7 @@ async function listAgents(req, res) {
       }
     ]);
 
-    res.json({
+    return res.json({
       ok: true,
       agents
     });
@@ -69,7 +122,7 @@ async function listAgents(req, res) {
 
     console.error(err);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false
     });
 
@@ -83,14 +136,23 @@ async function listAgents(req, res) {
 
 async function deleteMemory(req, res) {
   try {
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) return sendError(res, 401, "unauthorized");
 
     const { id } = req.params;
+    if (!isValidObjectId(id)) return sendError(res, 400, "invalid_memory_id");
+
+    const memory = await AgentMemory.findById(id).select("_id agentId").lean();
+    if (!memory) return sendError(res, 404, "memory_not_found");
+
+    const agent = await findOwnedAgent(memory.agentId, userId);
+    if (!agent) return sendError(res, 403, "forbidden");
 
     await AgentMemory.deleteOne({
-      _id: id
+      _id: memory._id
     });
 
-    res.json({
+    return res.json({
       ok: true
     });
 
@@ -98,7 +160,7 @@ async function deleteMemory(req, res) {
 
     console.error(err);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false
     });
 
@@ -112,14 +174,18 @@ async function deleteMemory(req, res) {
 
 async function clearAgentMemory(req, res) {
   try {
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) return sendError(res, 401, "unauthorized");
 
     const { agentId } = req.params;
+    const agent = await findOwnedAgent(agentId, userId);
+    if (!agent) return sendError(res, 403, "forbidden");
 
     await AgentMemory.deleteMany({
-      agentId
+      agentId: agent._id
     });
 
-    res.json({
+    return res.json({
       ok: true
     });
 
@@ -127,7 +193,7 @@ async function clearAgentMemory(req, res) {
 
     console.error(err);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false
     });
 

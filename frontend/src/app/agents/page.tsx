@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Cpu, Thermometer, Zap } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogTrigger,
@@ -67,21 +68,25 @@ export default function AgentsPage() {
   }
 
   async function fetchAgents() {
-    try {
-      const res = await fetch(apiUrl("/agents"), {
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
-        },
-      });
-
-      const data = await res.json();
-      if (data.ok) setAgents(data.agents as Agent[]);
-    } catch (err) {
-      console.error("Error fetching agents:", err);
-    } finally {
-      setLoading(false);
+  try {
+    console.log("Fetching agents...");
+    setLoading(true);
+    const res = await fetch(apiUrl("/agents"), {
+      headers: {
+        Authorization: "Bearer " + localStorage.getItem("token"),
+      },
+    });
+   
+    const data = await res.json();
+    if (data.ok) {
+      setAgents(data.agents as Agent[]);
     }
-  }
+ } catch (err) {
+  console.error("Error fetching agents:", err);
+} finally {
+  setLoading(false);
+}
+}
 
   useEffect(() => {
     fetchAgents();
@@ -148,112 +153,118 @@ export default function AgentsPage() {
             </div>
 
             {loading ? (
-              <p className="opacity-70">Loading agents…</p>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((skeletonId) => (
+                  <Card key={skeletonId} className="p-6">
+                    <div className="mb-4 flex items-start justify-between">
+                      <Skeleton className="h-12 w-12 rounded-lg" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                    </div>
+                    <Skeleton className="h-5 w-3/4 rounded-md" />
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                      <Skeleton className="h-4 w-1/2 rounded-md" />
+                      <Skeleton className="h-4 w-2/3 rounded-md" />
+                      <Skeleton className="h-4 w-full rounded-md" />
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Skeleton className="h-9 flex-1 rounded-md" />
+                      <Skeleton className="h-9 w-9 rounded-md" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
             ) : agents.length === 0 ? (
               <p className="opacity-60">No agents created yet.</p>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {agents.map(
-                  (agent) => (
-                    console.log(agent),
-                    (
-                      <Card
-                        key={agent._id}
-                        className="p-6"
-                        onClick={() =>
-                          setContext({
-                            page: "agents",
-                            agentId: agent._id,
-                            agentName: agent.name,
-                            model: agent.config?.model,
-                            temperature: agent.config?.temperature,
-                          })
-                        }
+                {agents.map((agent) => (
+                  <Card
+                    key={agent._id}
+                    className="p-6"
+                    onClick={() =>
+                      setContext({
+                        page: "agents",
+                        agentId: agent._id,
+                        agentName: agent.name,
+                        model: agent.config?.model,
+                        temperature: agent.config?.temperature,
+                      })
+                    }
+                  >
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
+                        <Cpu className="size-6 text-primary" />
+                      </div>
+
+                      <Badge variant={agent.status === "active" ? "success" : "secondary"}>
+                        {agent.status ?? "idle"}
+                      </Badge>
+                    </div>
+
+                    <h3 className="text-lg font-semibold">{agent.name}</h3>
+
+                    <Badge
+                      variant="outline"
+                      className={`mt-2 ${getProviderColor(agent.config?.provider)}`}
+                    >
+                      {agent.config?.provider ?? "unknown"} •{" "}
+                      {agent.config?.model ?? "default"}
+                    </Badge>
+
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Model</span>
+                        <span className="font-mono text-xs">
+                          {agent.config?.model ?? "—"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Thermometer className="size-4" />
+                          <span>Temperature</span>
+                        </div>
+                        <span className="font-medium">
+                          {agent.config?.temperature ?? "—"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Zap className="size-4" />
+                          <span>Max Tokens</span>
+                        </div>
+                        <span className="font-medium">
+                          {agent.config?.maxTokens ?? "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Used in</span>
+                        <span className="font-medium">
+                          {agent.workflows ?? "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 bg-transparent"
                       >
-                        <div className="mb-4 flex items-start justify-between">
-                          <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
-                            <Cpu className="size-6 text-primary" />
-                          </div>
-
-                          <Badge
-                            className={
-                              agent.status === "active"
-                                ? "bg-success/20 text-success border-success/30"
-                                : "bg-muted text-muted-foreground"
-                            }
-                          >
-                            {agent.status ?? "idle"}
-                          </Badge>
-                        </div>
-
-                        <h3 className="text-lg font-semibold">{agent.name}</h3>
-
-                        <Badge
-                          variant="outline"
-                          className={`mt-2 ${getProviderColor(agent.config?.provider)}`}
-                        >
-                          {agent.config?.provider ?? "unknown"} •{" "}
-                          {agent.config?.model ?? "default"}
-                        </Badge>
-
-                        <div className="mt-4 space-y-3 border-t border-border pt-4">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Model</span>
-                            <span className="font-mono text-xs">
-                              {agent.config?.model ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Thermometer className="size-4" />
-                              <span>Temperature</span>
-                            </div>
-                            <span className="font-medium">
-                              {agent.config?.temperature ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Zap className="size-4" />
-                              <span>Max Tokens</span>
-                            </div>
-                            <span className="font-medium">
-                              {agent.config?.maxTokens ?? "—"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              Used in
-                            </span>
-                            <span className="font-medium">
-                              {agent.workflows ?? "—"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 bg-transparent"
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive"
-                            onClick={() => deleteAgent(agent._id)}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      </Card>
-                    )
-                  ),
-                )}
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => deleteAgent(agent._id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
           </div>

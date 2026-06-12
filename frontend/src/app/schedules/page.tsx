@@ -23,7 +23,7 @@ export default function SchedulesPage() {
       },
       cache: "no-store",
     });
-
+    
     const data = await res.json();
     if (data.ok) setSchedules(data.schedules);
     setLoading(false);

@@ -1,5 +1,13 @@
 // src/lib/api.ts
 
+import {
+  WorkflowApiResponse,
+  CreateWorkflowPayload,
+  UpdateWorkflowPayload,
+  UpdateWorkflowStepsPayload,
+  AssignAgentPayload,
+} from "@/types/workflow";
+
 type ApiError = {
   status: number;
   message: string;
@@ -50,9 +58,9 @@ export async function api<T>(
     } satisfies ApiError;
   }
 
-  let data: any;
+  let data: T;
   try {
-    data = await res.json();
+    data = await res.json() as T;
   } catch {
     throw {
       status: res.status,
@@ -60,10 +68,13 @@ export async function api<T>(
     } satisfies ApiError;
   }
 
-  if (!res.ok || data?.ok === false) {
+  const ok = (data as Record<string, unknown>)?.ok;
+  const error = (data as Record<string, unknown>)?.error;
+
+  if (!res.ok || ok === false) {
     throw {
       status: res.status,
-      message: data?.error || "Request failed",
+      message: typeof error === "string" ? error : "Request failed",
     } satisfies ApiError;
   }
 
@@ -94,4 +105,35 @@ export function apiPut<T>(path: string, body?: unknown) {
 
 export function apiDelete<T>(path: string) {
   return api<T>(path, { method: "DELETE" });
+}
+
+/* -------------------------------
+   Workflow API wrappers
+-------------------------------- */
+
+export function getWorkflow(id: string): Promise<WorkflowApiResponse> {
+  return apiGet<WorkflowApiResponse>(`/workflows/${id}`);
+}
+
+export function createWorkflow(payload: CreateWorkflowPayload): Promise<WorkflowApiResponse> {
+  return apiPost<WorkflowApiResponse>(`/workflows`, payload);
+}
+
+export function updateWorkflow(id: string, payload: UpdateWorkflowPayload): Promise<WorkflowApiResponse> {
+  return api<WorkflowApiResponse>(`/workflows/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateWorkflowSteps(id: string, payload: UpdateWorkflowStepsPayload): Promise<WorkflowApiResponse> {
+  return apiPut<WorkflowApiResponse>(`/workflows/${id}/steps`, payload);
+}
+
+export function assignAgent(id: string, payload: AssignAgentPayload): Promise<WorkflowApiResponse> {
+  return apiPut<WorkflowApiResponse>(`/workflows/${id}/assign-agent`, payload);
+}
+
+export function runWorkflow(id: string): Promise<WorkflowApiResponse> {
+  return apiPost<WorkflowApiResponse>(`/workflows/${id}/run`);
 }

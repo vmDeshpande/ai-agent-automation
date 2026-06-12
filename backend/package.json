@@ -1,12 +1,14 @@
 {
   "name": "backend",
-  "version": "0.8.0",
+  "version": "0.9.1",
   "description": "",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "dev": "nodemon src/server.js",
-    "worker": "node src/agents/runner.js"
+    "worker": "node src/agents/runner.js",
+    "lint": "cd .. && npm run lint:backend",
+    "format": "cd .. && npm run format:backend"
   },
   "keywords": [],
   "author": "",

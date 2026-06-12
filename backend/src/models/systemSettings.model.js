@@ -51,6 +51,35 @@ const SystemSettingsSchema = new mongoose.Schema(
 
       temperature: { type: Number, default: 0.2 },
     },
+
+    mcp: {
+      enabled: { type: Boolean, default: false },
+      servers: {
+        type: [
+          new mongoose.Schema(
+            {
+              id: { type: String, required: true },
+              name: { type: String, required: true },
+              transport: {
+                type: String,
+                enum: ["stdio", "streamable-http"],
+                default: "stdio",
+              },
+              command: { type: String, default: "" },
+              args: { type: [String], default: [] },
+              url: { type: String, default: "" },
+              headers: { type: mongoose.Schema.Types.Mixed, default: {} },
+              env: { type: mongoose.Schema.Types.Mixed, default: {} },
+              enabled: { type: Boolean, default: true },
+              autoDiscover: { type: Boolean, default: true },
+              timeoutMs: { type: Number, default: 30000 },
+            },
+            { _id: false, minimize: false }
+          ),
+        ],
+        default: [],
+      },
+    },
   },
   { timestamps: true }
 );

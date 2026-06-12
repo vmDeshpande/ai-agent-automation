@@ -1,5 +1,19 @@
 const { z } = require("zod");
 
+const emptyStringToUndefined = (value) => {
+  if (typeof value === "string" && value.trim() === "") {
+    return undefined;
+  }
+  return value;
+};
+
+const preprocessOptional = (schema) =>
+  z.preprocess(emptyStringToUndefined, schema.optional());
+
+const optionalString = () => preprocessOptional(z.string());
+
+const optionalBoolean = () => preprocessOptional(z.coerce.boolean());
+
 const envSchema = z.object({
   // server
   PORT: z.coerce
@@ -23,6 +37,18 @@ const envSchema = z.object({
         message: "Invalid MONGO_URI",
       }
     ),
+  MONGO_MAX_POOL_SIZE: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("MONGO_MAX_POOL_SIZE must be a positive number")
+  ),
+  MONGO_MIN_POOL_SIZE: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("MONGO_MIN_POOL_SIZE must be a positive number")
+  ),
 
   // auth
   JWT_SECRET: z
@@ -32,103 +58,127 @@ const envSchema = z.object({
     .min(32, "JWT_SECRET must be at least 32 characters"),
 
   // optional AI providers
-  OLLAMA_HOST: z.string().optional(),
-  GROQ_API_KEY: z.string().optional(),
-  GEMINI_API_KEY: z.string().optional(),
-  HF_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
+  OLLAMA_HOST: optionalString(),
+  GROQ_API_KEY: optionalString(),
+  GEMINI_API_KEY: optionalString(),
+  HF_API_KEY: optionalString(),
+  OPENAI_API_KEY: optionalString(),
 
   // worker
-  WORKER_POLL_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .positive("WORKER_POLL_INTERVAL_MS must be a positive number")
-    .optional(),
+  WORKER_POLL_INTERVAL_MS: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("WORKER_POLL_INTERVAL_MS must be a positive number")
+  ),
 
-  WORKER_BATCH_SIZE: z.coerce
-    .number()
-    .int()
-    .positive("WORKER_BATCH_SIZE must be a positive number")
-    .optional(),
+  WORKER_BATCH_SIZE: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("WORKER_BATCH_SIZE must be a positive number")
+  ),
 
-  WORKER_MAX_ATTEMPTS: z.coerce
-    .number()
-    .int()
-    .positive("WORKER_MAX_ATTEMPTS must be a positive number")
-    .optional(),
+  WORKER_MAX_ATTEMPTS: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("WORKER_MAX_ATTEMPTS must be a positive number")
+  ),
 
-  WORKER_SERVICE_TOKEN: z.string().optional(),
+  WORKER_CONCURRENCY_LIMIT: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("WORKER_CONCURRENCY_LIMIT must be a positive number")
+  ),
+
+  WORKER_SERVICE_TOKEN: optionalString(),
 
   // email
-  EMAIL_HOST: z.string().optional(),
+  EMAIL_HOST: optionalString(),
 
-  EMAIL_PORT: z.coerce
-    .number()
-    .int()
-    .min(1, "EMAIL_PORT must be greater than 0")
-    .max(65535, "EMAIL_PORT must be less than 65536")
-    .optional(),
+  EMAIL_PORT: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .min(1, "EMAIL_PORT must be greater than 0")
+      .max(65535, "EMAIL_PORT must be less than 65536")
+  ),
 
-  EMAIL_USER: z.string().optional(),
-  EMAIL_PASS: z.string().optional(),
-  EMAIL_FROM: z.string().optional(),
+  EMAIL_USER: optionalString(),
+  EMAIL_PASS: optionalString(),
+  EMAIL_FROM: optionalString(),
 
   // telemetry
-  TELEMETRY_ENABLED: z.coerce.boolean().optional(),
+  TELEMETRY_ENABLED: optionalBoolean(),
 
-  DISABLE_ALL_ANALYTICS: z.coerce.boolean().optional(),
+  DISABLE_ALL_ANALYTICS: optionalBoolean(),
 
-  TELEMETRY_ENDPOINT: z.string().optional(),
+  TELEMETRY_ENDPOINT: optionalString(),
+
+  MCP_ENABLED: optionalBoolean(),
+  MCP_CONFIG_PATH: optionalString(),
+  MCP_CONFIG_JSON: optionalString(),
+  MCP_SERVER_URL: optionalString(),
 
   // rate limiting
-  RATE_LIMIT_WINDOW_MS: z.coerce
-    .number()
-    .int()
-    .positive("RATE_LIMIT_WINDOW_MS must be a positive number")
-    .optional(),
+  RATE_LIMIT_WINDOW_MS: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("RATE_LIMIT_WINDOW_MS must be a positive number")
+  ),
 
-  RATE_LIMIT_GLOBAL_MAX: z.coerce
-    .number()
-    .int()
-    .positive("RATE_LIMIT_GLOBAL_MAX must be a positive number")
-    .optional(),
+  RATE_LIMIT_GLOBAL_MAX: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("RATE_LIMIT_GLOBAL_MAX must be a positive number")
+  ),
 
-  RATE_LIMIT_AUTH_MAX: z.coerce
-    .number()
-    .int()
-    .positive("RATE_LIMIT_AUTH_MAX must be a positive number")
-    .optional(),
+  RATE_LIMIT_AUTH_MAX: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("RATE_LIMIT_AUTH_MAX must be a positive number")
+  ),
 
-  RATE_LIMIT_EXPENSIVE_MAX: z.coerce
-    .number()
-    .int()
-    .positive("RATE_LIMIT_EXPENSIVE_MAX must be a positive number")
-    .optional(),
+  RATE_LIMIT_EXPENSIVE_MAX: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("RATE_LIMIT_EXPENSIVE_MAX must be a positive number")
+  ),
 
-  RATE_LIMIT_WEBHOOK_MAX: z.coerce
-    .number()
-    .int()
-    .positive("RATE_LIMIT_WEBHOOK_MAX must be a positive number")
-    .optional(),
+  RATE_LIMIT_WEBHOOK_MAX: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("RATE_LIMIT_WEBHOOK_MAX must be a positive number")
+  ),
 
   // tool sandbox isolation options
-  TOOL_SANDBOX_UID: z.coerce
-    .number()
-    .int()
-    .positive("TOOL_SANDBOX_UID must be a positive number")
-    .optional(),
+  TOOL_SANDBOX_UID: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("TOOL_SANDBOX_UID must be a positive number")
+  ),
 
-  TOOL_SANDBOX_GID: z.coerce
-    .number()
-    .int()
-    .positive("TOOL_SANDBOX_GID must be a positive number")
-    .optional(),
+  TOOL_SANDBOX_GID: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("TOOL_SANDBOX_GID must be a positive number")
+  ),
 
-  TOOL_EXECUTION_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive("TOOL_EXECUTION_TIMEOUT_MS must be a positive number")
-    .optional(),
+  TOOL_EXECUTION_TIMEOUT_MS: preprocessOptional(
+    z.coerce
+      .number()
+      .int()
+      .positive("TOOL_EXECUTION_TIMEOUT_MS must be a positive number")
+  ),
 });
 
 function validateEnv() {

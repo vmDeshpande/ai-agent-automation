@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { useAssistantContext } from "@/context/assistant-context";
 import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import { useState } from "react";
@@ -29,7 +30,12 @@ export function AssistantContextPreview() {
 
       {/* Content */}
       {open && (
-        <div className="mt-3 space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="mt-3 space-y-3 rounded-lg border border-border bg-muted/30 p-3"
+        >
           {/* High-level */}
           <Section title="Scope">
             <ContextItem label="Page" value={context.page} />
@@ -91,7 +97,7 @@ export function AssistantContextPreview() {
               ))}
             </Section>
           )}
-        </div>
+        </motion.div>
       )}
     </div>
   );

@@ -67,6 +67,14 @@ type TaskMetadataStep = {
   seconds?: number;
 };
 
+type RetryHistoryItem = {
+  attempt: number;
+  startedAt: string | null;
+  failedAt: string;
+  error: string;
+  stepResults: StepResult[];
+};
+
 type Task = {
   _id: string;
   name: string;
@@ -74,15 +82,14 @@ type Task = {
   workflowId?: string;
   agentId?: string;
   createdAt: string;
-
-  // ✅ ADD THIS
   steps?: TaskMetadataStep[];
 
   metadata?: {
-    steps?: TaskMetadataStep[]; // optional legacy / fallback
+    steps?: TaskMetadataStep[];
   };
 
   stepResults?: StepResult[];
+  retryHistory?: RetryHistoryItem[];
 };
 
 type AgentMemoryItem = {
@@ -282,6 +289,57 @@ export default function TaskDetailPage() {
                   <h2 className="mb-6 text-xl font-semibold">
                     Execution Timeline ({executedSteps}/{totalSteps})
                   </h2>
+
+                  {/* Retry History List */}
+                  {task.retryHistory && task.retryHistory.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      {task.retryHistory.map((history, hIndex) => (
+                        <Collapsible key={hIndex} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                          <CollapsibleTrigger className="group flex w-full items-center justify-between text-left">
+                            <div className="flex items-center gap-3">
+                              <XCircle className="size-4 text-destructive" />
+                              <div>
+                                <span className="font-mono text-sm font-semibold text-destructive">
+                                  Attempt #{history.attempt} - Failed
+                                </span>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {history.error} • {new Date(history.failedAt).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="mt-4 pl-7 border-t border-border/50 pt-3 space-y-3">
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Historical Step Timeline:</p>
+                            {history.stepResults?.map((step, sIndex) => {
+                              const stepsMeta = task.steps ?? task.metadata?.steps ?? [];
+                              const stepMetadata = stepsMeta.find((s) => s.stepId === step.stepId);
+                              return (
+                                <div key={sIndex} className="flex items-start gap-3 text-xs">
+                                  {step.success ? (
+                                    <CheckCircle2 className="size-4 text-success mt-0.5" />
+                                  ) : (
+                                    <XCircle className="size-4 text-destructive mt-0.5" />
+                                  )}
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">{stepMetadata?.name || step.stepId}</span>
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0">{step.type}</Badge>
+                                    </div>
+                                    {step.output && (
+                                      <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[10px] text-muted-foreground border">
+                                        {typeof step.output === "string" ? step.output : JSON.stringify(step.output, null, 2)}
+                                      </pre>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     {stepResults.map((step: StepResult, index: number) => {

@@ -163,6 +163,15 @@ async function start() {
           console.error("SchedulerService changeStream handler error", err);
         }
       });
+      changeStream.on("error", (err) => {
+        console.warn(
+          "SchedulerService: change stream disabled. Schedule changes will require a service restart.",
+          err?.message || err
+        );
+        try {
+          changeStream.close();
+        } catch {}
+      });
     } catch (err) {
       console.warn("SchedulerService: change stream not supported or failed to start. You'll need to restart service to pick up schedule changes.", err.message || err);
     }

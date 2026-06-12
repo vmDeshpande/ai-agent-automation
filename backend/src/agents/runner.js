@@ -47,7 +47,6 @@ async function getGlobalWorkerSettings() {
     cachedWorkerSettings = settings?.worker || SAFE_FALLBACK_SETTINGS;
     lastSettingsFetch = now;
 
-    // console.log("🔁 Worker settings loaded:", cachedWorkerSettings);
     return cachedWorkerSettings;
   } catch (err) {
     console.error("⚠️ Failed to load worker settings:", err.message);
@@ -128,12 +127,11 @@ async function runWorkerLoop() {
       const steps =
         Array.isArray(task.steps) && task.steps.length > 0
           ? task.steps
-          : Array.isArray(task.metadata?.steps)
-            && task.metadata.steps.length > 0
-              ? task.metadata.steps
-              : Array.isArray(workflow?.metadata?.steps)
-                ? workflow.metadata.steps
-                : [];
+          : Array.isArray(task.metadata?.steps) && task.metadata.steps.length > 0
+            ? task.metadata.steps
+            : Array.isArray(workflow?.metadata?.steps)
+              ? workflow.metadata.steps
+              : [];
 
       const edges =
         Array.isArray(task.metadata?.edges) && task.metadata.edges.length > 0
@@ -142,9 +140,6 @@ async function runWorkerLoop() {
             ? workflow.metadata.edges
             : [];
       let success = true;
-
-      // console.log("🧩 STEPS:", steps);
-      // console.log("🔗 EDGES:", edges);
 
       if (steps.length > 0) {
         console.log(`⚙️ Executing ${steps.length} steps…`);
@@ -155,12 +150,12 @@ async function runWorkerLoop() {
         });
 
         function getStepId(step) {
-          return step.stepId || step.id || step.name;
+          return step?.stepId || step?.id || step?.name;
         }
 
         const stepsMap = {};
         steps.forEach((s) => {
-          stepsMap[getStepId(s)] = s;
+          if (s) stepsMap[getStepId(s)] = s;
         });
 
         // -------------------------------------------------------------
@@ -172,33 +167,30 @@ async function runWorkerLoop() {
         if (resumeFromStepId && Array.isArray(task.stepResults) && task.stepResults.length > 0) {
           console.log(`🔄 Resuming task execution path from step: ${resumeFromStepId}`);
           
-          // 1. Context Reconstruction Engine
           task.stepResults.forEach((pastResult) => {
-            context.results.push(pastResult);
-            context.last = {
-              input: pastResult.input,
-              output: pastResult.output,
-            };
+            if (pastResult) {
+              context.results.push(pastResult);
+              context.last = {
+                input: pastResult.input,
+                output: pastResult.output,
+              };
+            }
           });
 
-          // 2. Direct Pointer Redirection to specific failure node
           currentStep = stepsMap[resumeFromStepId];
 
           if (!currentStep) {
-            console.warn(`⚠️ Target resume step ${resumeFromStepId} not found in graph definition. Falling back to root configuration.`);
+            console.warn(`⚠️ Target resume step ${resumeFromStepId} not found in graph definition.`);
           }
         }
 
-        // Standard entry mode fallback (no resume parameters matching)
         if (!currentStep) {
-          // find start node (no incoming edges)
           const targetSet = new Set(edges.map((e) => e.target));
           currentStep = steps.find((s) => !targetSet.has(getStepId(s)));
         }
         // -------------------------------------------------------------
 
         let visited = new Set();
-
         let stepCount = 0;
         const MAX_STEPS = 50;
 
@@ -213,7 +205,6 @@ async function runWorkerLoop() {
 
           const result = await executeStep(currentStep, context, agent);
 
-          // 🔥 attach debug info directly to result
           result.name = currentStep.name;
           result.type = currentStep.type;
 
@@ -232,13 +223,11 @@ async function runWorkerLoop() {
             break;
           }
 
-          // 🔥 FIND NEXT STEP USING EDGES
           let nextEdge = null;
 
           // ✅ CONDITION
           if (currentStep.type === "condition") {
             const branch = result.branch;
-
             nextEdge = edges.find(
               (e) =>
                 e.source === getStepId(currentStep) &&
@@ -248,43 +237,28 @@ async function runWorkerLoop() {
 
           // ✅ SWITCH
           else if (currentStep.type === "switch") {
-            const normalize = (v) =>
-              String(v || "").toLowerCase().trim();
-
+            const normalize = (v) => String(v || "").toLowerCase().trim();
             const value = normalize(result.caseValue);
 
             nextEdge = edges.find((e) => {
               if (e.source !== getStepId(currentStep)) return false;
-
               const edgeValue = normalize(e.caseValue);
-
-              return value.includes(edgeValue); // 🔥 FIX
+              return value.includes(edgeValue);
             });
 
-            console.log("🔀 SWITCH DEBUG:", {
-              resultValue: value,
-              availableEdges: edges
-                .filter(e => e.source === getStepId(currentStep))
-                .map(e => e.caseValue)
-            });
-
-            // fallback (default edge)
             if (!nextEdge) {
               nextEdge = edges.find(
-                (e) =>
-                  e.source === getStepId(currentStep) &&
-                  !e.caseValue
+                (e) => e.source === getStepId(currentStep) && !e.caseValue
               );
             }
           }
 
-          // ✅ DEFAULT (linear fallback)
+          // ✅ DEFAULT
           else {
             nextEdge = edges.find((e) => e.source === getStepId(currentStep));
           }
 
           if (!nextEdge) break;
-
           currentStep = stepsMap[nextEdge.target];
         }
       } else {
@@ -296,23 +270,14 @@ async function runWorkerLoop() {
           context,
           agent
         );
-        console.log("🧪 LLM RESULT:", llmResult);
 
         await Task.findByIdAndUpdate(task._id, {
           $push: { stepResults: llmResult },
         });
 
         success = llmResult.success;
-        writeLog("Fallback LLM executed (no steps found)", "warn", {
-          workerId: WORKER_ID,
-          taskId: task._id,
-          workflowId: task.workflowId,
-        });
       }
 
-      // -------------------------
-      // Complete task
-      // -------------------------
       await completeTask(task._id, { success });
 
       const durationMs = task.startedAt
@@ -323,35 +288,18 @@ async function runWorkerLoop() {
       telemetryService
         .recordTaskMetrics({ stepTypes, durationMs })
         .catch((err) => {
-          console.error("Telemetry recordTaskMetrics failed:", err.message || err);
+          console.error("Telemetry failed:", err.message || err);
         });
 
       console.log(`✅ Task ${task._id} completed. Success: ${success}`);
-      writeLog(
-        success
-          ? "Task completed successfully"
-          : "Task completed with failure",
-        success ? "success" : "error",
-        {
-          workerId: WORKER_ID,
-          taskId: task._id,
-          workflowId: task.workflowId,
-        }
-      );
 
     } catch (error) {
       console.error("❌ Worker loop error:", error);
-      writeLog(`Runner error: ${error.message}`, "error", {
-        workerId: WORKER_ID,
-      });
       await sleep(SAFE_FALLBACK_SETTINGS.pollIntervalMs);
     }
   }
 }
 
-/* -------------------------
-   Startup
-------------------------- */
 async function start() {
   if (mongoose.connection.readyState === 0) {
     await mongoose.connect(process.env.MONGO_URI);
@@ -363,6 +311,5 @@ async function start() {
 module.exports = { start, runWorkerLoop };
 
 if (require.main === module) {
-  console.log("🚀 Starting Worker Service...");
   start();
 }

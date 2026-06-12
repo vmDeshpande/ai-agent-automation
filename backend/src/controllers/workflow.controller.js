@@ -1,5 +1,6 @@
 const Workflow = require("../models/workflow.model");
 const Task = require("../models/task.model");
+const workflowVersionService = require("../services/workflowVersion.service");
 
 /** Create a new workflow */
 async function createWorkflow(req, res) {
@@ -12,6 +13,10 @@ async function createWorkflow(req, res) {
       agentId: agentId || null,
       metadata: metadata || {},
     });
+
+    // Create initial version configuration snapshot
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Initial version");
+
     res.status(201).json({ ok: true, workflow });
   } catch (err) {
     console.error("createWorkflow error", err);
@@ -60,6 +65,9 @@ async function updateWorkflow(req, res) {
     }
 
     await workflow.save();
+
+    // Create a new version if name, description, or agentId configuration details changed
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Updated details");
 
     res.json({ ok: true, workflow });
   } catch (err) {
@@ -132,6 +140,9 @@ async function assignAgent(req, res) {
     const { agentId } = req.body;
     workflow.agentId = agentId || null;
     await workflow.save();
+
+    // Create a new version for this execution settings change
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Assigned agent");
 
     return res.json({ ok: true, workflow });
   } catch (err) {
@@ -249,6 +260,9 @@ async function updateWorkflowSteps(req, res) {
 
     await workflow.save();
 
+    // Create a new version if steps or edges changed
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Updated graph configuration");
+
     return res.json({ ok: true, workflow });
   } catch (err) {
     console.error("updateWorkflowSteps error", err);
@@ -257,5 +271,33 @@ async function updateWorkflowSteps(req, res) {
 }
 
 
+async function exportWorkflow(req, res) {
+  try {
+    const workflow = await Workflow.findById(req.params.workflowId);
+    if (!workflow) return res.status(404).json({ ok: false, error: "not_found" });
+    if (workflow.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ ok: false, error: "forbidden" });
 
-module.exports = { createWorkflow, listWorkflows, getWorkflow, updateWorkflow, deleteWorkflow, addTaskToWorkflow, assignAgent, runWorkflowNow, updateWorkflowSteps };
+    const exportData = {
+      id: workflow._id.toString(),
+      name: workflow.name,
+      description: workflow.description || "",
+      category: "",
+      icon: "",
+      tags: [],
+      agentId: workflow.agentId ? workflow.agentId.toString() : null,
+      steps: (workflow.metadata?.steps ?? []),
+      edges: (workflow.metadata?.edges ?? []),
+    };
+
+    res.setHeader("Content-Disposition", `attachment; filename="${workflow.name.replace(/\s+/g, "_")}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    return res.json(exportData);
+  } catch (err) {
+    console.error("exportWorkflow error", err);
+    return res.status(500).json({ ok: false, error: "server_error" });
+  }
+}
+
+
+module.exports = { createWorkflow, listWorkflows, getWorkflow, updateWorkflow, deleteWorkflow, addTaskToWorkflow, assignAgent, runWorkflowNow, updateWorkflowSteps, exportWorkflow };
