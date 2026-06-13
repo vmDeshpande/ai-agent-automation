@@ -1,19 +1,19 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import AuthProvider from "@/context/AuthContext";
-import { ThemeProvider, useTheme } from "next-themes";
-import { PageTransition } from "@/components/page-transition";
-import { ToastProvider } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster";
-import { AssistantShell } from "@/components/assistant/assistant-shell";
-import { AssistantProvider } from "@/context/assistant-context";
-import { Analytics } from "@vercel/analytics/next";
-import { usePathname } from "next/navigation";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { SettingsProvider, useSettings } from "@/context/SettingsContext";
+import { useState, useEffect } from 'react';
+import AuthProvider from '@/context/AuthContext';
+import { ThemeProvider, useTheme } from 'next-themes';
+import { PageTransition } from '@/components/page-transition';
+import { ToastProvider } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
+import { AssistantShell } from '@/components/assistant/assistant-shell';
+import { AssistantProvider } from '@/context/assistant-context';
+import { Analytics } from '@vercel/analytics/next';
+import { usePathname } from 'next/navigation';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { SettingsProvider, useSettings } from '@/context/SettingsContext';
 
-const PUBLIC_ROUTES = ["/login", "/register"];
+const PUBLIC_ROUTES = ['/login', '/register', '/privacy'];
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
   const { settings, loading } = useSettings();
@@ -41,10 +41,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
 
       {!isPublicRoute && (
         <>
-          <AssistantShell
-            open={assistantOpen}
-            onClose={() => setAssistantOpen(false)}
-          />
+          <AssistantShell open={assistantOpen} onClose={() => setAssistantOpen(false)} />
 
           {!assistantOpen && (
             <button
@@ -63,11 +60,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ClientLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <SettingsProvider>
