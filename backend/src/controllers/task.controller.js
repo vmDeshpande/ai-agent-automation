@@ -1,5 +1,6 @@
-const Task = require("../models/task.model");
-const Workflow = require("../models/workflow.model"); // import workflow model
+const Task = require('../models/task.model');
+const Workflow = require('../models/workflow.model'); // import workflow model
+const { getWorkflowGraph } = require('../utils/workflowMetadata');
 // -----------------------------
 // Utility: Response Helpers
 // -----------------------------
@@ -28,30 +29,24 @@ async function createTask(req, res) {
     if (workflowId) {
       workflow = await Workflow.findOne({
         _id: workflowId,
-        userId: req.user._id
+        userId: req.user._id,
       });
       if (!workflow) {
-        return sendError(res, 404, "workflow_not_found");
+        return sendError(res, 404, 'workflow_not_found');
       }
 
       agentId = workflow.agentId || null;
 
-      // ✅ SINGLE SOURCE OF TRUTH
-      steps = Array.isArray(workflow.metadata?.steps)
-        ? workflow.metadata.steps
-        : [];
-
-      edges = Array.isArray(workflow.metadata?.edges)
-        ? workflow.metadata.edges
-        : [];
+      // Single source of truth: workflow.metadata.{steps,edges}
+      ({ steps, edges } = getWorkflowGraph(workflow));
 
       if (steps.length === 0) {
-        return sendError(res, 400, "workflow_has_no_steps");
+        return sendError(res, 400, 'workflow_has_no_steps');
       }
     }
 
     const task = await Task.create({
-      name: name || `Workflow Run - ${workflow?.name || "task"}`,
+      name: name || `Workflow Run - ${workflow?.name || 'task'}`,
       workflowId: workflowId || null,
       agentId,
       userId,
@@ -64,7 +59,7 @@ async function createTask(req, res) {
       metadata: {
         ...(metadata || {}),
         edges,
-        runningBy: "manual_run",
+        runningBy: 'manual_run',
       },
     });
 
@@ -76,8 +71,8 @@ async function createTask(req, res) {
 
     return sendOK(res, { task });
   } catch (err) {
-    console.error("createTask error:", err);
-    return sendError(res, 500, "server_error");
+    console.error('createTask error:', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -88,12 +83,7 @@ async function createTask(req, res) {
 async function listTasks(req, res) {
   try {
     const userId = req.user._id;
-    const {
-      status,
-      workflowId,
-      page = 1,
-      limit = 20
-    } = req.query;
+    const { status, workflowId, page = 1, limit = 20 } = req.query;
 
     // base query (always scoped to user)
     const q = { userId };
@@ -107,10 +97,7 @@ async function listTasks(req, res) {
     const skip = (pageNum - 1) * pageSize;
 
     const [tasks, total] = await Promise.all([
-      Task.find(q)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(pageSize),
+      Task.find(q).sort({ createdAt: -1 }).skip(skip).limit(pageSize),
       Task.countDocuments(q),
     ]);
 
@@ -124,11 +111,10 @@ async function listTasks(req, res) {
       },
     });
   } catch (err) {
-    console.error("listTasks error:", err);
-    return sendError(res, 500, "server_error");
+    console.error('listTasks error:', err);
+    return sendError(res, 500, 'server_error');
   }
 }
-
 
 // -----------------------------
 // Get Single Task
@@ -140,14 +126,13 @@ async function getTask(req, res) {
     const taskId = req.params.id;
 
     const t = await Task.findById(taskId);
-    if (!t) return sendError(res, 404, "not_found");
-    if (t.userId.toString() !== userId.toString())
-      return sendError(res, 403, "forbidden");
+    if (!t) return sendError(res, 404, 'not_found');
+    if (t.userId.toString() !== userId.toString()) return sendError(res, 403, 'forbidden');
 
     return sendOK(res, { task: t });
   } catch (err) {
-    console.error("getTask error:", err);
-    return sendError(res, 500, "server_error");
+    console.error('getTask error:', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -159,28 +144,26 @@ async function updateTask(req, res) {
   try {
     const userId = req.user._id;
     const taskId = req.params.id;
-    const allowed = ["name", "status", "input", "metadata", "attempts"];
+    const allowed = ['name', 'status', 'input', 'metadata', 'attempts'];
 
     const t = await Task.findById(taskId);
-    if (!t) return sendError(res, 404, "not_found");
-    if (t.userId.toString() !== userId.toString())
-      return sendError(res, 403, "forbidden");
+    if (!t) return sendError(res, 404, 'not_found');
+    if (t.userId.toString() !== userId.toString()) return sendError(res, 403, 'forbidden');
 
     Object.entries(req.body).forEach(([key, val]) => {
       if (allowed.includes(key)) t[key] = val;
     });
 
     // lifecycle auto-updates
-    if (req.body.status === "running" && !t.startedAt)
-      t.startedAt = Date.now();
-    if (req.body.status === "completed") t.completedAt = Date.now();
+    if (req.body.status === 'running' && !t.startedAt) t.startedAt = Date.now();
+    if (req.body.status === 'completed') t.completedAt = Date.now();
 
     await t.save();
 
     return sendOK(res, { task: t });
   } catch (err) {
-    console.error("updateTask error:", err);
-    return sendError(res, 500, "server_error");
+    console.error('updateTask error:', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -194,9 +177,8 @@ async function deleteTask(req, res) {
     const taskId = req.params.id;
 
     const t = await Task.findById(taskId);
-    if (!t) return sendError(res, 404, "not_found");
-    if (t.userId.toString() !== userId.toString())
-      return sendError(res, 403, "forbidden");
+    if (!t) return sendError(res, 404, 'not_found');
+    if (t.userId.toString() !== userId.toString()) return sendError(res, 403, 'forbidden');
 
     // Remove task from workflow.tasks if linked
     if (t.workflowId) {
@@ -206,10 +188,10 @@ async function deleteTask(req, res) {
     }
 
     await t.deleteOne();
-    return sendOK(res, { message: "deleted" });
+    return sendOK(res, { message: 'deleted' });
   } catch (err) {
-    console.error("deleteTask error:", err);
-    return sendError(res, 500, "server_error");
+    console.error('deleteTask error:', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 

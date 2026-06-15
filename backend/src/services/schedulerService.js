@@ -1,9 +1,10 @@
 // src/services/schedulerService.js
-const cron = require("node-cron");
-const Schedule = require("../models/schedule.model");
-const Workflow = require("../models/workflow.model");
-const Task = require("../models/task.model");
-const mongoose = require("mongoose");
+const cron = require('node-cron');
+const Schedule = require('../models/schedule.model');
+const Workflow = require('../models/workflow.model');
+const Task = require('../models/task.model');
+const mongoose = require('mongoose');
+const { getWorkflowGraph } = require('../utils/workflowMetadata');
 
 const jobs = new Map();
 
@@ -14,20 +15,14 @@ async function createTaskForSchedule(schedule) {
   try {
     const workflow = await Workflow.findById(schedule.workflowId);
     if (!workflow) {
-      console.warn("Scheduled workflow not found:", schedule._id);
+      console.warn('Scheduled workflow not found:', schedule._id);
       return;
     }
 
-    const steps = workflow.metadata?.steps;
-    const edges = Array.isArray(workflow.metadata?.edges)
-      ? workflow.metadata.edges
-      : [];
+    const { steps, edges } = getWorkflowGraph(workflow);
 
-    if (!Array.isArray(steps) || steps.length === 0) {
-      console.warn(
-        "Scheduled workflow has no steps:",
-        workflow._id.toString()
-      );
+    if (steps.length === 0) {
+      console.warn('Scheduled workflow has no steps:', workflow._id.toString());
       return;
     }
 
@@ -38,8 +33,7 @@ async function createTaskForSchedule(schedule) {
       agentId: workflow.agentId || null,
       userId: schedule.userId,
 
-      // ✅ THIS IS THE FIX
-      steps: workflow.metadata?.steps || [],
+      steps,
       currentStep: 0,
 
       input: schedule.taskInput || {},
@@ -47,12 +41,11 @@ async function createTaskForSchedule(schedule) {
         ...(schedule.taskMetadata || {}),
         edges,
         scheduledBy: schedule._id.toString(),
-        trigger: "schedule"
+        trigger: 'schedule',
       },
 
-      status: "pending"
+      status: 'pending',
     });
-
 
     workflow.tasks = workflow.tasks || [];
     workflow.tasks.push(task._id);
@@ -62,18 +55,17 @@ async function createTaskForSchedule(schedule) {
     await schedule.save();
 
     console.log(
-      "Scheduler: created task",
+      'Scheduler: created task',
       task._id.toString(),
-      "for schedule",
+      'for schedule',
       schedule._id.toString()
     );
 
     return task;
   } catch (err) {
-    console.error("createTaskForSchedule error:", err);
+    console.error('createTaskForSchedule error:', err);
   }
 }
-
 
 /**
  * Schedule a single job in memory
@@ -90,31 +82,35 @@ function scheduleJob(schedule) {
   }
 
   try {
-    const job = cron.schedule(schedule.cron, async () => {
-      console.log("Scheduler trigger:", schedule._id.toString());
+    const job = cron.schedule(
+      schedule.cron,
+      async () => {
+        console.log('Scheduler trigger:', schedule._id.toString());
 
-      // create a fresh object from DB each trigger, to avoid stale references
-      const s = await Schedule.findById(schedule._id);
-      if (!s || !s.enabled) {
-        console.log("Scheduler: disabled or removed:", schedule._id.toString());
-        if (jobs.has(key)) {
-          jobs.get(key).stop();
-          jobs.delete(key);
+        // create a fresh object from DB each trigger, to avoid stale references
+        const s = await Schedule.findById(schedule._id);
+        if (!s || !s.enabled) {
+          console.log('Scheduler: disabled or removed:', schedule._id.toString());
+          if (jobs.has(key)) {
+            jobs.get(key).stop();
+            jobs.delete(key);
+          }
+          return;
         }
-        return;
-      }
 
-      await createTaskForSchedule(s);
-    }, {
-      scheduled: schedule.enabled,
-      timezone: schedule.timezone || "UTC"
-    });
+        await createTaskForSchedule(s);
+      },
+      {
+        scheduled: schedule.enabled,
+        timezone: schedule.timezone || 'UTC',
+      }
+    );
 
     jobs.set(key, job);
-    console.log("Scheduler: job scheduled", key, "cron:", schedule.cron);
+    console.log('Scheduler: job scheduled', key, 'cron:', schedule.cron);
     return job;
   } catch (err) {
-    console.error("Scheduler: failed to schedule", schedule._id.toString(), err);
+    console.error('Scheduler: failed to schedule', schedule._id.toString(), err);
   }
 }
 
@@ -125,32 +121,37 @@ async function start() {
   try {
     // ensure DB connected
     if (mongoose.connection.readyState === 0) {
-      throw new Error("MongoDB not connected. Start scheduler after DB connect.");
+      throw new Error('MongoDB not connected. Start scheduler after DB connect.');
     }
 
     const schedules = await Schedule.find({ enabled: true });
-    console.log("SchedulerService: found", schedules.length, "enabled schedules");
+    console.log('SchedulerService: found', schedules.length, 'enabled schedules');
     schedules.forEach((s) => scheduleJob(s));
 
     // watch DB changes if you want to dynamically add/remove jobs (optional)
     // We'll setup a simple change stream if available to automatically reload schedules when changed.
     try {
-      const changeStream = Schedule.watch([], { fullDocument: "updateLookup" });
-      changeStream.on("change", (change) => {
+      const changeStream = Schedule.watch([], { fullDocument: 'updateLookup' });
+      changeStream.on('change', (change) => {
         try {
           const doc = change.fullDocument;
           if (!doc) return;
           // on update/create/delete, refresh this specific job
           const id = doc._id.toString();
-          if (change.operationType === "delete") {
+          if (change.operationType === 'delete') {
             if (jobs.has(id)) {
               jobs.get(id).stop();
               jobs.delete(id);
-              console.log("SchedulerService: removed job for", id);
+              console.log('SchedulerService: removed job for', id);
             }
           } else {
             // upsert schedule
-            console.log("SchedulerService: change detected for schedule", id, "op:", change.operationType);
+            console.log(
+              'SchedulerService: change detected for schedule',
+              id,
+              'op:',
+              change.operationType
+            );
             if (doc.enabled) scheduleJob(doc);
             else {
               if (jobs.has(id)) {
@@ -160,12 +161,12 @@ async function start() {
             }
           }
         } catch (err) {
-          console.error("SchedulerService changeStream handler error", err);
+          console.error('SchedulerService changeStream handler error', err);
         }
       });
-      changeStream.on("error", (err) => {
+      changeStream.on('error', (err) => {
         console.warn(
-          "SchedulerService: change stream disabled. Schedule changes will require a service restart.",
+          'SchedulerService: change stream disabled. Schedule changes will require a service restart.',
           err?.message || err
         );
         try {
@@ -173,11 +174,13 @@ async function start() {
         } catch {}
       });
     } catch (err) {
-      console.warn("SchedulerService: change stream not supported or failed to start. You'll need to restart service to pick up schedule changes.", err.message || err);
+      console.warn(
+        "SchedulerService: change stream not supported or failed to start. You'll need to restart service to pick up schedule changes.",
+        err.message || err
+      );
     }
-
   } catch (err) {
-    console.error("SchedulerService start error:", err);
+    console.error('SchedulerService start error:', err);
     throw err;
   }
 }
@@ -187,7 +190,9 @@ async function start() {
  */
 function stop() {
   for (const [k, job] of jobs.entries()) {
-    try { job.stop(); } catch { }
+    try {
+      job.stop();
+    } catch {}
   }
   jobs.clear();
 }

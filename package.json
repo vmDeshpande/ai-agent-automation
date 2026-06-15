@@ -1,6 +1,6 @@
 {
   "name": "ai-agent-automation",
-    "version": "1.0.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "prepare": "husky",
@@ -12,6 +12,8 @@
     "format:backend": "prettier --write backend/src"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.39.4",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^9.1.2",

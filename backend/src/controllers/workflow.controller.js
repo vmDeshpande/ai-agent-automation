@@ -1,6 +1,7 @@
-const Workflow = require("../models/workflow.model");
-const Task = require("../models/task.model");
-const workflowVersionService = require("../services/workflowVersion.service");
+const Workflow = require('../models/workflow.model');
+const Task = require('../models/task.model');
+const workflowVersionService = require('../services/workflowVersion.service');
+const { normalizeWorkflowMetadata, getWorkflowGraph } = require('../utils/workflowMetadata');
 
 /** Create a new workflow */
 async function createWorkflow(req, res) {
@@ -11,16 +12,16 @@ async function createWorkflow(req, res) {
       description,
       userId: req.user._id,
       agentId: agentId || null,
-      metadata: metadata || {},
+      metadata: normalizeWorkflowMetadata(metadata),
     });
 
     // Create initial version configuration snapshot
-    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Initial version");
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, 'Initial version');
 
     res.status(201).json({ ok: true, workflow });
   } catch (err) {
-    console.error("createWorkflow error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('createWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -30,21 +31,22 @@ async function listWorkflows(req, res) {
     const workflows = await Workflow.find({ userId: req.user._id }).sort({ createdAt: -1 });
     res.json({ ok: true, workflows });
   } catch (err) {
-    console.error("listWorkflows error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('listWorkflows error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
 /** Get single workflow by ID */
 async function getWorkflow(req, res) {
   try {
-    const workflow = await Workflow.findById(req.params.id).populate("tasks");
-    if (!workflow) return res.status(404).json({ error: "not_found" });
-    if (workflow.userId.toString() !== req.user._id.toString()) return res.status(403).json({ error: "forbidden" });
+    const workflow = await Workflow.findById(req.params.id).populate('tasks');
+    if (!workflow) return res.status(404).json({ error: 'not_found' });
+    if (workflow.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ error: 'forbidden' });
     res.json({ ok: true, workflow });
   } catch (err) {
-    console.error("getWorkflow error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('getWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -52,11 +54,12 @@ async function getWorkflow(req, res) {
 async function updateWorkflow(req, res) {
   try {
     const workflow = await Workflow.findById(req.params.id);
-    if (!workflow) return res.status(404).json({ error: "not_found" });
-    if (workflow.userId.toString() !== req.user._id.toString()) return res.status(403).json({ error: "forbidden" });
+    if (!workflow) return res.status(404).json({ error: 'not_found' });
+    if (workflow.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ error: 'forbidden' });
 
     // Object.assign(workflow, req.body); // update fields from request
-    const allowed = ["name", "description", "status", "tasks", "agentId"];
+    const allowed = ['name', 'description', 'status', 'tasks', 'agentId'];
 
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -67,12 +70,12 @@ async function updateWorkflow(req, res) {
     await workflow.save();
 
     // Create a new version if name, description, or agentId configuration details changed
-    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Updated details");
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, 'Updated details');
 
     res.json({ ok: true, workflow });
   } catch (err) {
-    console.error("updateWorkflow error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('updateWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -80,9 +83,9 @@ async function updateWorkflow(req, res) {
 async function deleteWorkflow(req, res) {
   try {
     const workflow = await Workflow.findById(req.params.id);
-    if (!workflow) return res.status(404).json({ error: "not_found" });
+    if (!workflow) return res.status(404).json({ error: 'not_found' });
     if (workflow.userId.toString() !== req.user._id.toString())
-      return res.status(403).json({ error: "forbidden" });
+      return res.status(403).json({ error: 'forbidden' });
 
     // Use deleteOne on the document
     await workflow.deleteOne();
@@ -90,10 +93,10 @@ async function deleteWorkflow(req, res) {
     // Or alternatively, directly:
     // await Workflow.findByIdAndDelete(req.params.id);
 
-    res.json({ ok: true, message: "workflow_deleted" });
+    res.json({ ok: true, message: 'workflow_deleted' });
   } catch (err) {
-    console.error("deleteWorkflow error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('deleteWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -101,19 +104,19 @@ async function deleteWorkflow(req, res) {
 async function addTaskToWorkflow(req, res) {
   try {
     const workflow = await Workflow.findById(req.params.workflowId);
-    if (!workflow) return res.status(404).json({ error: "not_found" });
+    if (!workflow) return res.status(404).json({ error: 'not_found' });
 
     if (workflow.userId.toString() !== req.user._id.toString())
-      return res.status(403).json({ error: "forbidden" });
+      return res.status(403).json({ error: 'forbidden' });
 
     const { taskId } = req.body;
-    if (!taskId) return res.status(400).json({ error: "taskId_required" });
+    if (!taskId) return res.status(400).json({ error: 'taskId_required' });
 
     // 👇 Prevent duplicates
     if (workflow.tasks.includes(taskId)) {
       return res.json({
         ok: true,
-        message: "Task already exists in workflow",
+        message: 'Task already exists in workflow',
         workflow,
       });
     }
@@ -123,8 +126,8 @@ async function addTaskToWorkflow(req, res) {
 
     res.json({ ok: true, workflow });
   } catch (err) {
-    console.error("addTaskToWorkflow error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('addTaskToWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -132,22 +135,22 @@ async function addTaskToWorkflow(req, res) {
 async function assignAgent(req, res) {
   try {
     const workflow = await Workflow.findById(req.params.workflowId);
-    if (!workflow) return res.status(404).json({ ok: false, error: "not_found" });
+    if (!workflow) return res.status(404).json({ ok: false, error: 'not_found' });
 
     if (workflow.userId.toString() !== req.user._id.toString())
-      return res.status(403).json({ ok: false, error: "forbidden" });
+      return res.status(403).json({ ok: false, error: 'forbidden' });
 
     const { agentId } = req.body;
     workflow.agentId = agentId || null;
     await workflow.save();
 
     // Create a new version for this execution settings change
-    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Assigned agent");
+    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, 'Assigned agent');
 
     return res.json({ ok: true, workflow });
   } catch (err) {
-    console.error("assignAgent error", err);
-    return res.status(500).json({ ok: false, error: "server_error" });
+    console.error('assignAgent error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -157,20 +160,15 @@ async function runWorkflowNow(req, res) {
     const workflowId = req.params.workflowId;
 
     const workflow = await Workflow.findById(workflowId);
-    if (!workflow) return res.status(404).json({ ok: false, error: "not_found" });
+    if (!workflow) return res.status(404).json({ ok: false, error: 'not_found' });
 
     if (workflow.userId.toString() !== req.user._id.toString())
-      return res.status(403).json({ ok: false, error: "forbidden" });
+      return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    const steps = Array.isArray(workflow.metadata?.steps)
-      ? workflow.metadata.steps
-      : [];
-    const edges = Array.isArray(workflow.metadata?.edges)
-      ? workflow.metadata.edges
-      : [];
+    const { steps, edges } = getWorkflowGraph(workflow);
 
     if (steps.length === 0) {
-      return res.status(400).json({ ok: false, error: "workflow_has_no_steps" });
+      return res.status(400).json({ ok: false, error: 'workflow_has_no_steps' });
     }
 
     // Create task
@@ -185,9 +183,9 @@ async function runWorkflowNow(req, res) {
       metadata: {
         steps,
         edges,
-        runningBy: null
+        runningBy: null,
       },
-      status: "pending"
+      status: 'pending',
     });
 
     // 🔥 Add task to workflow list
@@ -196,8 +194,8 @@ async function runWorkflowNow(req, res) {
 
     return res.json({ ok: true, task });
   } catch (err) {
-    console.error("runWorkflowNow error", err);
-    return res.status(500).json({ ok: false, error: "server_error" });
+    console.error('runWorkflowNow error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
@@ -209,17 +207,17 @@ async function updateWorkflowSteps(req, res) {
     const workflow = await Workflow.findById(req.params.workflowId);
 
     if (!workflow) {
-      return res.status(404).json({ ok: false, error: "not_found" });
+      return res.status(404).json({ ok: false, error: 'not_found' });
     }
 
     if (workflow.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ ok: false, error: "forbidden" });
+      return res.status(403).json({ ok: false, error: 'forbidden' });
     }
 
     let { steps, edges } = req.body;
 
     if (!Array.isArray(steps)) {
-      return res.status(400).json({ error: "Invalid steps" });
+      return res.status(400).json({ error: 'Invalid steps' });
     }
 
     // 🔥 CLEAN STEPS (REMOVE LEGACY FIELDS)
@@ -237,67 +235,116 @@ async function updateWorkflowSteps(req, res) {
     // 🔥 VALIDATE EDGES
     edges = Array.isArray(edges)
       ? edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
+          id: e.id,
+          source: e.source,
+          target: e.target,
 
-        // 🔥 keep everything important
-        label: e.label || "",
-        condition: e.condition || null,
-        caseValue: e.caseValue || null,
+          // 🔥 keep everything important
+          label: e.label || '',
+          condition: e.condition || null,
+          caseValue: e.caseValue || null,
 
-        // optional but good
-        animated: e.animated ?? true,
-        style: e.style || { strokeWidth: 2 },
-      }))
+          // optional but good
+          animated: e.animated ?? true,
+          style: e.style || { strokeWidth: 2 },
+        }))
       : [];
 
-    workflow.metadata = workflow.metadata || {};
-    workflow.metadata.steps = steps;
-    workflow.metadata.edges = edges;
+    workflow.metadata = normalizeWorkflowMetadata({ steps, edges });
 
-    workflow.markModified("metadata");
+    workflow.markModified('metadata');
 
     await workflow.save();
 
     // Create a new version if steps or edges changed
-    await workflowVersionService.createVersionIfNeeded(workflow, req.user._id, "Updated graph configuration");
+    await workflowVersionService.createVersionIfNeeded(
+      workflow,
+      req.user._id,
+      'Updated graph configuration'
+    );
 
     return res.json({ ok: true, workflow });
   } catch (err) {
-    console.error("updateWorkflowSteps error", err);
-    return res.status(500).json({ ok: false, error: "server_error" });
+    console.error('updateWorkflowSteps error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
-
 
 async function exportWorkflow(req, res) {
   try {
     const workflow = await Workflow.findById(req.params.workflowId);
-    if (!workflow) return res.status(404).json({ ok: false, error: "not_found" });
+    if (!workflow) return res.status(404).json({ ok: false, error: 'not_found' });
     if (workflow.userId.toString() !== req.user._id.toString())
-      return res.status(403).json({ ok: false, error: "forbidden" });
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const { steps, edges } = getWorkflowGraph(workflow);
 
     const exportData = {
       id: workflow._id.toString(),
       name: workflow.name,
-      description: workflow.description || "",
-      category: "",
-      icon: "",
+      description: workflow.description || '',
+      category: '',
+      icon: '',
       tags: [],
       agentId: workflow.agentId ? workflow.agentId.toString() : null,
-      steps: (workflow.metadata?.steps ?? []),
-      edges: (workflow.metadata?.edges ?? []),
+      steps,
+      edges,
     };
 
-    res.setHeader("Content-Disposition", `attachment; filename="${workflow.name.replace(/\s+/g, "_")}.json"`);
-    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${workflow.name.replace(/\s+/g, '_')}.json"`
+    );
+    res.setHeader('Content-Type', 'application/json');
     return res.json(exportData);
   } catch (err) {
-    console.error("exportWorkflow error", err);
-    return res.status(500).json({ ok: false, error: "server_error" });
+    console.error('exportWorkflow error', err);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
+async function cloneWorkflow(req, res) {
+  try {
+    const originalWorkflow = await Workflow.findById(req.params.id);
+    if (!originalWorkflow) return res.status(404).json({ ok: false, error: 'not_found' });
 
-module.exports = { createWorkflow, listWorkflows, getWorkflow, updateWorkflow, deleteWorkflow, addTaskToWorkflow, assignAgent, runWorkflowNow, updateWorkflowSteps, exportWorkflow };
+    if (originalWorkflow.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+
+    const clonedMetadata = JSON.parse(
+      JSON.stringify(originalWorkflow.metadata || { steps: [], edges: [] })
+    );
+    const clonedWorkflow = await Workflow.create({
+      name: `${originalWorkflow.name} (Copy)`,
+      description: originalWorkflow.description,
+      userId: req.user._id,
+      agentId: originalWorkflow.agentId || null,
+      metadata: normalizeWorkflowMetadata(clonedMetadata),
+    });
+    await workflowVersionService.createVersionIfNeeded(
+      clonedWorkflow,
+      req.user._id,
+      'Cloned from original'
+    );
+
+    res.status(201).json({ ok: true, workflow: clonedWorkflow });
+  } catch (err) {
+    console.error('cloneWorkflow error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+}
+
+module.exports = {
+  createWorkflow,
+  listWorkflows,
+  getWorkflow,
+  updateWorkflow,
+  deleteWorkflow,
+  addTaskToWorkflow,
+  assignAgent,
+  runWorkflowNow,
+  updateWorkflowSteps,
+  exportWorkflow,
+  cloneWorkflow,
+};

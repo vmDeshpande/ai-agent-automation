@@ -1,17 +1,19 @@
 // backend/src/tools/browserTool.js
-const puppeteer = require("puppeteer");
-const path = require("path");
-const fs = require("fs");
-const { BASE_DIR } = require("./fileTool");
-const mkdirp = require("util").promisify(fs.mkdir);
+const puppeteer = require('puppeteer');
+const path = require('path');
+const fs = require('fs');
+const { BASE_DIR } = require('./fileTool');
+const mkdirp = require('util').promisify(fs.mkdir);
 
 const DEFAULT_TIMEOUT = 20_000;
 
 function resolveSafePath(filePath) {
   const resolved = path.resolve(BASE_DIR, filePath);
   const relative = path.relative(BASE_DIR, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`Access denied: Path traversal detected for browser screenshot path: "${filePath}"`);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(
+      `Access denied: Path traversal detected for browser screenshot path: "${filePath}"`
+    );
   }
   return resolved;
 }
@@ -21,9 +23,9 @@ function resolveSafePath(filePath) {
  */
 async function launchBrowser() {
   return puppeteer.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
     headless: true,
-    defaultViewport: { width: 1280, height: 800 }
+    defaultViewport: { width: 1280, height: 800 },
   });
 }
 
@@ -35,9 +37,12 @@ async function screenshot(url, options = {}) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
   try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: options.timeout || DEFAULT_TIMEOUT });
-    
-    let screenshotOpts = { fullPage: !!options.fullPage };
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: options.timeout || DEFAULT_TIMEOUT,
+    });
+
+    const screenshotOpts = { fullPage: !!options.fullPage };
     if (options.path) {
       const safePath = resolveSafePath(options.path);
       // Ensure the destination folder exists
@@ -47,15 +52,15 @@ async function screenshot(url, options = {}) {
 
     if (options.selector) {
       const el = await page.$(options.selector);
-      if (!el) throw new Error("selector_not_found");
-      
-      const buffer = await el.screenshot({ ...screenshotOpts, type: "png" });
+      if (!el) throw new Error('selector_not_found');
+
+      const buffer = await el.screenshot({ ...screenshotOpts, type: 'png' });
       if (options.path) {
         return { path: screenshotOpts.path };
       }
       return { buffer };
     } else {
-      const buffer = await page.screenshot({ ...screenshotOpts, type: "png" });
+      const buffer = await page.screenshot({ ...screenshotOpts, type: 'png' });
       if (options.path) {
         return { path: screenshotOpts.path };
       }
@@ -75,7 +80,10 @@ async function evaluate(url, script, options = {}) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeout || DEFAULT_TIMEOUT });
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: options.timeout || DEFAULT_TIMEOUT,
+    });
     const result = await page.evaluate((code) => {
       try {
         const fn = new Function(code);
