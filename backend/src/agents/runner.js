@@ -1,187 +1,49 @@
-const { writeLog } = require("./logger");
-const mongoose = require("mongoose");
-const Task = require("../models/task.model");
-const Workflow = require("../models/workflow.model");
-const SystemSettings = require("../models/systemSettings.model");
-const { claimNextTask, completeTask } = require("./queueService");
-const { executeStep } = require("./executor");
-const telemetryService = require("../services/telemetry.service");
-const WORKER_ID = process.env.WORKER_ID || "agent-1";
-require("dotenv").config();
-
-/* -------------------------
-   Settings cache
-------------------------- */
-let cachedWorkerSettings = null;
-let lastSettingsFetch = 0;
-const SETTINGS_REFRESH_MS = 5000;
-
-/* -------------------------
-   Safety fallback (only if DB fails)
-------------------------- */
-const SAFE_FALLBACK_SETTINGS = {
-  pollIntervalMs: 2000,
-  maxAttempts: 3,
-};
-
-/* -------------------------
-   Utils
-------------------------- */
-function sleep(ms) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-
-async function getGlobalWorkerSettings() {
-  const now = Date.now();
-
-  if (
-    cachedWorkerSettings &&
-    now - lastSettingsFetch < SETTINGS_REFRESH_MS
-  ) {
-    return cachedWorkerSettings;
-  }
-
-  try {
-    const settings = await SystemSettings.findOne().lean();
-
-    cachedWorkerSettings = settings?.worker || SAFE_FALLBACK_SETTINGS;
-    lastSettingsFetch = now;
-
-    return cachedWorkerSettings;
-  } catch (err) {
-    console.error("⚠️ Failed to load worker settings:", err.message);
-    return SAFE_FALLBACK_SETTINGS;
-  }
-}
-
-/* -------------------------
-   Worker loop
-------------------------- */
-let isRunningLoop = false;
-
-async function runWorkerLoop() {
-  if (isRunningLoop) return;
-  isRunningLoop = true;
-
-  console.log("👷 Agent Runner Started… waiting for tasks");
-  writeLog("Runner started", "info", { workerId: WORKER_ID });
-
-  while (true) {
-    try {
-      const task = await claimNextTask();
-
-      // -------------------------
-      // IDLE → poll interval sleep
-      // -------------------------
-      if (!task) {
-        const { pollIntervalMs } = await getGlobalWorkerSettings();
-        await sleep(pollIntervalMs);
-        continue;
-      }
-
-      // -------------------------
-      // Mark task running
-      // -------------------------
-      await Task.findByIdAndUpdate(task._id, {
-        status: "running",
-        startedAt: new Date(),
-      });
-
-      console.log(`📝 Task claimed: ${task._id}`);
-      writeLog("Task claimed", "info", {
-        workerId: WORKER_ID,
-        taskId: task._id,
-        workflowId: task.workflowId,
-      });
-
-      const workflow = task.workflowId
-        ? await Workflow.findById(task.workflowId).lean()
-        : null;
-
-      let agent = null;
-
-      if (workflow?.agentId) {
-        const Agent = require("../models/agent.model");
-        agent = await Agent.findById(workflow.agentId).lean();
-      }
-
-      const now = new Date();
-      const context = {
-        ...(task.input || {}),
-        timestampIso: now.toISOString(),
-        timestamp: now.toLocaleString("en-US", {
-          dateStyle: "long",
-          timeStyle: "short",
-        }),
-        date: now.toLocaleDateString("en-US", { dateStyle: "long" }),
-        time: now.toLocaleTimeString("en-US", { timeStyle: "short" }),
-        workflow,
-        taskId: task._id,
-        userId: task.userId,
-        results: [],
-      };
-
-      // -------------------------
-      // Resolve steps
-      // -------------------------
-      const steps =
-        Array.isArray(task.steps) && task.steps.length > 0
-          ? task.steps
-          : Array.isArray(task.metadata?.steps) && task.metadata.steps.length > 0
-            ? task.metadata.steps
-            : Array.isArray(workflow?.metadata?.steps)
-              ? workflow.metadata.steps
-              : [];
-
-      const edges =
-        Array.isArray(task.metadata?.edges) && task.metadata.edges.length > 0
-          ? task.metadata.edges
-          : Array.isArray(workflow?.metadata?.edges)
-            ? workflow.metadata.edges
-            : [];
-      let success = true;
-
-      if (steps.length > 0) {
-        console.log(`⚙️ Executing ${steps.length} steps…`);
-        writeLog(`Executing ${steps.length} steps`, "info", {
-          workerId: WORKER_ID,
-          taskId: task._id,
-          workflowId: task.workflowId,
-        });
-
-        function getStepId(step) {
-          return step?.stepId || step?.id || step?.name;
-        }
-
-        const stepsMap = {};
-        steps.forEach((s) => {
-          if (s) stepsMap[getStepId(s)] = s;
-        });
-
-        // -------------------------------------------------------------
-        // 🔥 RESUMABLE PATH HANDLING (Issue #57 state management)
+// -------------------------------------------------------------
+        // 🔥 RESUMABLE PATH HANDLING (Issue #57 Enhanced Graph State Management)
         // -------------------------------------------------------------
         const resumeFromStepId = task.resumeFromStepId || task.metadata?.resumeFromStepId;
         let currentStep = null;
+        const completedStepIds = new Set(); // Fix #1: Track completed steps explicitly to prevent re-execution loops
 
         if (resumeFromStepId && Array.isArray(task.stepResults) && task.stepResults.length > 0) {
           console.log(`🔄 Resuming task execution path from step: ${resumeFromStepId}`);
           
+          // Fix #3: Graph compatibility validation check
+          const stepResultsAreValid = task.stepResults.every(res => res && stepsMap[res.stepId || res.id || res.name]);
+          if (!stepResultsAreValid) {
+            console.warn(`⚠️ Stored step results are incompatible with the current workflow graph definition.`);
+          }
+
           task.stepResults.forEach((pastResult) => {
             if (pastResult) {
-              context.results.push(pastResult);
-              context.last = {
-                input: pastResult.input,
-                output: pastResult.output,
-              };
+              const pastId = pastResult.stepId || pastResult.id || pastResult.name;
+              completedStepIds.add(pastId);
+              // Ensure context results array is populated with past history
+              if (!context.results.some(r => (r.stepId || r.id || r.name) === pastId)) {
+                context.results.push(pastResult);
+              }
             }
           });
 
-          currentStep = stepsMap[resumeFromStepId];
-
-          if (!currentStep) {
-            console.warn(`⚠️ Target resume step ${resumeFromStepId} not found in graph definition.`);
+          // Fix #2: Correctly reconstruct context.last using the immediate structural predecessor in the edges graph
+          const incomingEdge = edges.find(e => e.target === resumeFromStepId);
+          if (incomingEdge) {
+            const predecessorResult = task.stepResults.find(res => (res.stepId || res.id || res.name) === incomingEdge.source);
+            if (predecessorResult) {
+              context.last = {
+                input: predecessorResult.input,
+                output: predecessorResult.output,
+              };
+            }
           }
+
+          // Fallback if no structural predecessor was found in the edge map
+          if (!context.last && task.stepResults.length > 0) {
+            const finalResult = task.stepResults[task.stepResults.length - 1];
+            context.last = { input: finalResult.input, output: finalResult.output };
+          }
+
+          currentStep = stepsMap[resumeFromStepId];
         }
 
         if (!currentStep) {
@@ -195,121 +57,90 @@ async function runWorkerLoop() {
         const MAX_STEPS = 50;
 
         while (currentStep && stepCount < MAX_STEPS) {
+          const currentId = getStepId(currentStep);
+
+          // Fix #1: If this step has already been completed in a previous execution run, skip executing it again
+          if (completedStepIds.has(currentId)) {
+            console.log(`⏭️ Skipping already completed step: ${currentId}`);
+            visited.add(currentId);
+            
+            // Route to next step based on historical step results data
+            const pastResult = task.stepResults.find(res => (res.stepId || res.id || res.name) === currentId);
+            let nextEdge = null;
+            
+            if (currentStep.type === "condition" && pastResult) {
+              nextEdge = edges.find(e => e.source === currentId && e.condition === pastResult.branch);
+            } else if (currentStep.type === "switch" && pastResult) {
+              const normalize = (v) => String(v || "").toLowerCase().trim();
+              const value = normalize(pastResult.caseValue);
+              nextEdge = edges.find(e => e.source === currentId && normalize(e.caseValue).includes(value)) || 
+                         edges.find(e => e.source === currentId && !e.caseValue);
+            } else {
+              nextEdge = edges.find(e => e.source === currentId);
+            }
+
+            if (!nextEdge) break;
+            currentStep = stepsMap[nextEdge.target];
+            continue; // Fast forward to the next node without triggering execution
+          }
+
           stepCount++;
           if (stepCount >= MAX_STEPS) {
             console.warn("⚠️ Max steps reached, stopping execution");
             success = false;
-          }
-
-          visited.add(getStepId(currentStep));
-
-          const result = await executeStep(currentStep, context, agent);
-
-          result.name = currentStep.name;
-          result.type = currentStep.type;
-
-          await Task.findByIdAndUpdate(task._id, {
-            $push: { stepResults: result },
-          });
-
-          context.results.push(result);
-          context.last = {
-            input: result.input,
-            output: result.output,
-          };
-
-          if (!result.success) {
-            success = false;
             break;
           }
 
-          let nextEdge = null;
+          visited.add(currentId);
 
-          // ✅ CONDITION
-          if (currentStep.type === "condition") {
-            const branch = result.branch;
-            nextEdge = edges.find(
-              (e) =>
-                e.source === getStepId(currentStep) &&
-                e.condition === branch
-            );
-          }
+          try {
+            // Execute the step using your execution tool orchestration mechanics
+            const result = await executeStep(currentStep, context);
+            
+            // Append the fresh execution result tracking metrics
+            const executionOutput = {
+              stepId: currentId,
+              name: currentStep.name,
+              type: currentStep.type,
+              input: context.last ? context.last.output : null,
+              output: result.output,
+              success: result.success,
+              executedAt: new Date()
+            };
 
-          // ✅ SWITCH
-          else if (currentStep.type === "switch") {
-            const normalize = (v) => String(v || "").toLowerCase().trim();
-            const value = normalize(result.caseValue);
+            context.results.push(executionOutput);
+            task.stepResults.push(executionOutput);
 
-            nextEdge = edges.find((e) => {
-              if (e.source !== getStepId(currentStep)) return false;
-              const edgeValue = normalize(e.caseValue);
-              return value.includes(edgeValue);
-            });
-
-            if (!nextEdge) {
-              nextEdge = edges.find(
-                (e) => e.source === getStepId(currentStep) && !e.caseValue
-              );
+            if (!result.success) {
+              console.error(`❌ Step ${currentId} failed execution path boundary.`);
+              success = false;
+              break;
             }
-          }
 
-          // ✅ DEFAULT
-          else {
-            nextEdge = edges.find((e) => e.source === getStepId(currentStep));
-          }
+            // Update running contextual memory blocks for successive steps
+            context.last = {
+              input: executionOutput.input,
+              output: executionOutput.output
+            };
 
-          if (!nextEdge) break;
-          currentStep = stepsMap[nextEdge.target];
+            // Calculate next path trajectory point
+            let nextEdge = null;
+            if (currentStep.type === "condition") {
+              nextEdge = edges.find(e => e.source === currentId && e.condition === result.branch);
+            } else if (currentStep.type === "switch") {
+              const normalize = (v) => String(v || "").toLowerCase().trim();
+              const value = normalize(result.caseValue);
+              nextEdge = edges.find(e => e.source === currentId && normalize(e.caseValue).includes(value)) || 
+                         edges.find(e => e.source === currentId && !e.caseValue);
+            } else {
+              nextEdge = edges.find(e => e.source === currentId);
+            }
+
+            currentStep = nextEdge ? stepsMap[nextEdge.target] : null;
+
+          } catch (stepError) {
+            console.error(`💥 Unhandled error exception parsing step ${currentId}:`, stepError);
+            success = false;
+            break;
+          }
         }
-      } else {
-        const llmResult = await executeStep(
-          {
-            type: "llm",
-            prompt: task.input?.text || "Give a short summary.",
-          },
-          context,
-          agent
-        );
-
-        await Task.findByIdAndUpdate(task._id, {
-          $push: { stepResults: llmResult },
-        });
-
-        success = llmResult.success;
-      }
-
-      await completeTask(task._id, { success });
-
-      const durationMs = task.startedAt
-        ? Date.now() - new Date(task.startedAt).getTime()
-        : 0;
-
-      const stepTypes = context.results.map((result) => result.type || "unknown");
-      telemetryService
-        .recordTaskMetrics({ stepTypes, durationMs })
-        .catch((err) => {
-          console.error("Telemetry failed:", err.message || err);
-        });
-
-      console.log(`✅ Task ${task._id} completed. Success: ${success}`);
-
-    } catch (error) {
-      console.error("❌ Worker loop error:", error);
-      await sleep(SAFE_FALLBACK_SETTINGS.pollIntervalMs);
-    }
-  }
-}
-
-async function start() {
-  if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("📡 MongoDB connected for Agent Runner");
-  }
-  runWorkerLoop();
-}
-
-module.exports = { start, runWorkerLoop };
-
-if (require.main === module) {
-  start();
-}
