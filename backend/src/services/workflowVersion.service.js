@@ -1,18 +1,18 @@
-const WorkflowVersion = require("../models/workflowVersion.model");
-const Workflow = require("../models/workflow.model");
+const WorkflowVersion = require('../models/workflowVersion.model');
+const Workflow = require('../models/workflow.model');
 
 /**
  * Check if the current workflow configuration has changed compared to the latest version snapshot.
  */
 function hasConfigChanged(workflow, latestVersion) {
   if (!latestVersion) return true;
-  
+
   const snapshot = latestVersion.workflowSnapshot;
   if (!snapshot) return true;
 
   if (workflow.name !== snapshot.name) return true;
   if (workflow.description !== snapshot.description) return true;
-  if (String(workflow.agentId || "") !== String(snapshot.agentId || "")) return true;
+  if (String(workflow.agentId || '') !== String(snapshot.agentId || '')) return true;
 
   // Retrieve steps and edges
   const steps1 = workflow.metadata?.steps || [];
@@ -29,9 +29,11 @@ function hasConfigChanged(workflow, latestVersion) {
 /**
  * Create a new workflow version if there are configuration changes since the latest version.
  */
-async function createVersionIfNeeded(workflow, userId, note = "") {
+async function createVersionIfNeeded(workflow, userId, note = '') {
   // Find latest version for workflow
-  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({
+    versionNumber: -1,
+  });
 
   if (latestVersion && !hasConfigChanged(workflow, latestVersion)) {
     return latestVersion; // No change, return latest version
@@ -41,12 +43,12 @@ async function createVersionIfNeeded(workflow, userId, note = "") {
 
   const workflowSnapshot = {
     name: workflow.name,
-    description: workflow.description || "",
+    description: workflow.description || '',
     agentId: workflow.agentId || null,
     metadata: {
       steps: JSON.parse(JSON.stringify(workflow.metadata?.steps || [])),
-      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || []))
-    }
+      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || [])),
+    },
   };
 
   let attempts = 0;
@@ -58,14 +60,16 @@ async function createVersionIfNeeded(workflow, userId, note = "") {
         versionNumber: nextVersionNumber,
         workflowSnapshot,
         createdBy: userId || null,
-        note
+        note,
       });
       return newVersion;
     } catch (err) {
       // Handle parallel/concurrent creation of identical versionNumbers (e.g. compound unique index violation)
       if (err.code === 11000 && attempts < maxAttempts - 1) {
         attempts++;
-        const currentLatest = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+        const currentLatest = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({
+          versionNumber: -1,
+        });
         nextVersionNumber = currentLatest ? currentLatest.versionNumber + 1 : 1;
         // loop and retry with the new version number
         continue;
@@ -78,18 +82,20 @@ async function createVersionIfNeeded(workflow, userId, note = "") {
 /**
  * Create a retry-safe workflow version snapshot during rollback to prevent duplicate key errors.
  */
-async function createRollbackSnapshot(workflow, userId = null, note = "") {
+async function createRollbackSnapshot(workflow, userId = null, note = '') {
   const workflowSnapshot = {
     name: workflow.name,
-    description: workflow.description || "",
+    description: workflow.description || '',
     agentId: workflow.agentId || null,
     metadata: {
       steps: JSON.parse(JSON.stringify(workflow.metadata?.steps || [])),
-      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || []))
-    }
+      edges: JSON.parse(JSON.stringify(workflow.metadata?.edges || [])),
+    },
   };
 
-  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+  const latestVersion = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({
+    versionNumber: -1,
+  });
   let nextVersionNumber = latestVersion ? latestVersion.versionNumber + 1 : 1;
 
   let attempts = 0;
@@ -101,13 +107,15 @@ async function createRollbackSnapshot(workflow, userId = null, note = "") {
         versionNumber: nextVersionNumber,
         workflowSnapshot,
         createdBy: userId || null,
-        note
+        note,
       });
       return newVersion;
     } catch (err) {
       if (err.code === 11000 && attempts < maxAttempts - 1) {
         attempts++;
-        const currentLatest = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({ versionNumber: -1 });
+        const currentLatest = await WorkflowVersion.findOne({ workflowId: workflow._id }).sort({
+          versionNumber: -1,
+        });
         nextVersionNumber = currentLatest ? currentLatest.versionNumber + 1 : 1;
         continue;
       }
@@ -115,15 +123,17 @@ async function createRollbackSnapshot(workflow, userId = null, note = "") {
     }
   }
 
-  throw new Error("Failed to create rollback snapshot: retries exhausted due to concurrent version conflicts");
+  throw new Error(
+    'Failed to create rollback snapshot: retries exhausted due to concurrent version conflicts'
+  );
 }
 
 /**
  * Get all versions for a workflow, sorted by versionNumber descending.
  */
 async function listVersions(workflowId) {
-  return await WorkflowVersion.find({ workflowId })
-    .populate("createdBy", "name email")
+  return WorkflowVersion.find({ workflowId })
+    .populate('createdBy', 'name email')
     .sort({ versionNumber: -1 });
 }
 
@@ -131,8 +141,10 @@ async function listVersions(workflowId) {
  * Get details of a single workflow version.
  */
 async function getVersion(workflowId, versionId) {
-  return await WorkflowVersion.findOne({ _id: versionId, workflowId })
-    .populate("createdBy", "name email");
+  return WorkflowVersion.findOne({ _id: versionId, workflowId }).populate(
+    'createdBy',
+    'name email'
+  );
 }
 
 /**
@@ -140,25 +152,32 @@ async function getVersion(workflowId, versionId) {
  * Saves current state as a new version, then restores target snapshot configuration.
  */
 async function rollback(workflow, versionId, userId) {
-  const selectedVersion = await WorkflowVersion.findOne({ _id: versionId, workflowId: workflow._id });
+  const selectedVersion = await WorkflowVersion.findOne({
+    _id: versionId,
+    workflowId: workflow._id,
+  });
   if (!selectedVersion) {
-    throw new Error("version_not_found");
+    throw new Error('version_not_found');
   }
 
   // 1. Snapshot current configuration state to save as a pre-rollback version
-  await createRollbackSnapshot(workflow, userId, `Pre-rollback to v${selectedVersion.versionNumber}`);
+  await createRollbackSnapshot(
+    workflow,
+    userId,
+    `Pre-rollback to v${selectedVersion.versionNumber}`
+  );
 
   // 2. Restore selected snapshot configuration
   const targetSnapshot = selectedVersion.workflowSnapshot;
   workflow.name = targetSnapshot.name;
-  workflow.description = targetSnapshot.description || "";
+  workflow.description = targetSnapshot.description || '';
   workflow.agentId = targetSnapshot.agentId || null;
   workflow.metadata = {
     steps: targetSnapshot.metadata?.steps || [],
-    edges: targetSnapshot.metadata?.edges || []
+    edges: targetSnapshot.metadata?.edges || [],
   };
 
-  workflow.markModified("metadata");
+  workflow.markModified('metadata');
   await workflow.save();
 
   return workflow;
@@ -168,5 +187,5 @@ module.exports = {
   createVersionIfNeeded,
   listVersions,
   getVersion,
-  rollback
+  rollback,
 };

@@ -6,12 +6,22 @@ import { Card } from "@/components/ui/card";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, Pause, Play, RefreshCw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 import { Pause, Play, RefreshCw, Terminal, X } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
 import { apiUrl } from "@/lib/api";
@@ -29,11 +39,16 @@ type Log = {
 
 function getLevelColor(level: LogLevel) {
   switch (level) {
-    case "success": return "text-success";
-    case "error": return "text-destructive";
-    case "warn": return "text-warning";
-    case "debug": return "text-zinc-500";
-    default: return "text-foreground";
+    case "success":
+      return "text-success";
+    case "error":
+      return "text-destructive";
+    case "warn":
+      return "text-warning";
+    case "debug":
+      return "text-zinc-500";
+    default:
+      return "text-foreground";
   }
 }
 
@@ -54,6 +69,7 @@ function getLogBadge(log: Log) {
   if (msg.includes("claimed")) return "CLAIMED";
   return log.level.toUpperCase();
 }
+
 function LogRowSkeleton() {
   return (
     <div className="flex items-center gap-3 py-2">
@@ -67,11 +83,11 @@ function LogRowSkeleton() {
 export default function LogsPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { setContext, clearContext } = useAssistantContext();
 
-  // Filter state
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
   const [workflowId, setWorkflowId] = useState("");
@@ -103,19 +119,28 @@ export default function LogsPage() {
   async function fetchLogs(showLoader = false) {
     try {
       if (showLoader) setLoading(true);
+      setError("");
+
       const res = await fetch(apiUrl(`/logs?${buildQuery()}`), {
         headers: { Authorization: "Bearer " + localStorage.getItem("token") },
         cache: "no-store",
       });
+
       const data = await res.json();
-      if (data.ok && Array.isArray(data.logs)) {
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Could not load logs");
+      }
+
+      if (Array.isArray(data.logs)) {
         const sorted = [...data.logs].sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
         setLogs(sorted);
       }
-    } catch (err) {
-      console.error("Failed to fetch logs:", err);
+    } catch {
+      setError("Could not connect to the backend service.");
     } finally {
       setLoading(false);
     }
@@ -129,39 +154,66 @@ export default function LogsPage() {
 
   useEffect(() => {
     if (loading) return;
+
     const recentErrors = logs.filter((l) => l.level === "error").slice(-5);
+
     setContext({
       page: "logs",
       logScope: "system",
       status: `${recentErrors.length} recent error(s)`,
-      recentActivity: recentErrors.map((l) => ({ type: "workflow" as const, name: l.message.slice(0, 80), status: "error" })),
-      logsSummary: recentErrors.map((l) => ({ level: "error", message: l.message, time: l.createdAt })),
+      recentActivity: recentErrors.map((l) => ({
+        type: "workflow" as const,
+        name: l.message.slice(0, 80),
+        status: "error",
+      })),
+      logsSummary: recentErrors.map((l) => ({
+        level: "error",
+        message: l.message,
+        time: l.createdAt,
+      })),
     });
+
     return () => clearContext();
-  }, [loading, logs.length]);
+  }, [loading, logs, setContext, clearContext]);
 
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs, autoScroll]);
 
-  const hasActiveFilters = search || (level && level !== "all") || workflowId || taskId || startDate || endDate;
+  const hasActiveFilters =
+    search || (level && level !== "all") || workflowId || taskId || startDate || endDate;
 
   return (
     <AuthGuard>
       <div className="flex min-h-screen">
         <AppSidebar />
-        <main className="flex-1 transition-[padding] duration-300" style={{ paddingLeft: "var(--sidebar-width, 256px)" }}>
+
+        <main
+          className="flex-1 transition-[padding] duration-300"
+          style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
+        >
           <div className="p-8">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold">System Logs</h1>
-                <p className="mt-1 text-muted-foreground">Execution and worker events</p>
+                <p className="mt-1 text-muted-foreground">
+                  Execution and worker events
+                </p>
               </div>
+
               <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={() => setAutoScroll((v) => !v)}>
-                  {autoScroll ? <Pause className="mr-2 size-4" /> : <Play className="mr-2 size-4" />}
+                <Button
+                  variant="outline"
+                  onClick={() => setAutoScroll((v) => !v)}
+                >
+                  {autoScroll ? (
+                    <Pause className="mr-2 size-4" />
+                  ) : (
+                    <Play className="mr-2 size-4" />
+                  )}
                   Auto-scroll
                 </Button>
+
                 <Button variant="outline" onClick={() => fetchLogs(true)}>
                   <RefreshCw className="mr-2 size-4" />
                   Refresh
@@ -169,7 +221,6 @@ export default function LogsPage() {
               </div>
             </div>
 
-            {/* Filter Bar */}
             <div className="mb-4 flex flex-wrap gap-3 items-end">
               <Input
                 placeholder="Search logs..."
@@ -177,6 +228,7 @@ export default function LogsPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-52"
               />
+
               <Select value={level} onValueChange={setLevel}>
                 <SelectTrigger className="w-36">
                   <SelectValue placeholder="Log Level" />
@@ -190,33 +242,39 @@ export default function LogsPage() {
                   <SelectItem value="error">Error</SelectItem>
                 </SelectContent>
               </Select>
+
               <Input
                 placeholder="Workflow ID"
                 value={workflowId}
                 onChange={(e) => setWorkflowId(e.target.value)}
                 className="w-44"
               />
+
               <Input
                 placeholder="Task ID"
                 value={taskId}
                 onChange={(e) => setTaskId(e.target.value)}
                 className="w-44"
               />
+
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="w-40"
               />
+
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="w-40"
               />
+
               {hasActiveFilters && (
                 <Button variant="ghost" onClick={resetFilters} className="gap-1">
-                  <X className="size-4" /> Reset
+                  <X className="size-4" />
+                  Reset
                 </Button>
               )}
             </div>
@@ -228,7 +286,9 @@ export default function LogsPage() {
                   <div className="size-3 rounded-full bg-warning" />
                   <div className="size-3 rounded-full bg-success" />
                 </div>
-                <span className="font-mono text-xs text-muted-foreground">logs.txt</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  logs.txt
+                </span>
               </div>
 
               <div
@@ -238,33 +298,69 @@ export default function LogsPage() {
                 <div className="space-y-1 font-mono text-sm">
                   {loading && (
                     <>
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <LogRowSkeleton key={i} />
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <LogRowSkeleton key={i} />
                       ))}
-                      </>
-                    )}
+                    </>
+                  )}
 
-                  {!loading && logs.length === 0 && (
+                  {!loading && error && (
                     <Empty className="border-none bg-transparent max-w-md mx-auto py-12">
                       <EmptyHeader>
                         <EmptyMedia className="bg-zinc-900 text-zinc-400">
                           <Terminal className="size-5" />
                         </EmptyMedia>
-                        <EmptyTitle className="text-zinc-200">No logs found</EmptyTitle>
+                        <EmptyTitle className="text-zinc-200">
+                          Unable to load logs
+                        </EmptyTitle>
                         <EmptyDescription className="text-zinc-500">
-                          {hasActiveFilters ? "No logs match your current filters." : "No active job cycles detected."}
+                          {error}
+                        </EmptyDescription>
+                      </EmptyHeader>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchLogs(true)}
+                        className="mx-auto mt-4"
+                      >
+                        <RefreshCw className="mr-2 size-4" />
+                        Retry
+                      </Button>
+                    </Empty>
+                  )}
+
+                  {!loading && !error && logs.length === 0 && (
+                    <Empty className="border-none bg-transparent max-w-md mx-auto py-12">
+                      <EmptyHeader>
+                        <EmptyMedia className="bg-zinc-900 text-zinc-400">
+                          <Terminal className="size-5" />
+                        </EmptyMedia>
+                        <EmptyTitle className="text-zinc-200">
+                          No logs found
+                        </EmptyTitle>
+                        <EmptyDescription className="text-zinc-500">
+                          {hasActiveFilters
+                            ? "No logs match your current filters."
+                            : "No active job cycles detected."}
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
                   )}
-                  {logs.length > 0 && (
+
+                  {!loading && !error && logs.length > 0 && (
                     <div className="w-full h-full align-top space-y-1">
                       {logs.map((log) => (
                         <div key={log._id} className={getLogColor(log)}>
                           <span className="text-zinc-600">
                             [{new Date(log.createdAt).toLocaleTimeString()}]
                           </span>
-                          <Badge variant="outline" className={`mx-2 border-current text-[10px] h-4 px-1.5 ${getLogColor(log)}`}>
+                          <Badge
+                            variant="outline"
+                            className={`mx-2 border-current text-[10px] h-4 px-1.5 ${getLogColor(
+                              log
+                            )}`}
+                          >
                             {getLogBadge(log)}
                           </Badge>
                           {log.message}
@@ -272,6 +368,7 @@ export default function LogsPage() {
                       ))}
                     </div>
                   )}
+
                   <div ref={bottomRef} />
                 </div>
               </div>

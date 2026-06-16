@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const Workflow = require("../models/workflow.model");
 const { v4: uuidv4 } = require("uuid");
+const { normalizeWorkflowMetadata } = require("../utils/workflowMetadata");
 
 const templatesDir = path.join(__dirname, "../templates");
 
@@ -98,10 +99,7 @@ async function importTemplate(req, res) {
             description: template.description,
             userId: req.user._id,
             agentId: template.agentId || null,
-            metadata: {
-                steps,
-                edges: template.edges || [],
-            },
+            metadata: normalizeWorkflowMetadata({ steps, edges }),
         });
 
         res.json({

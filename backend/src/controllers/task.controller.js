@@ -1,4 +1,15 @@
 const Task = require("../models/task.model");
+<<<<<<< HEAD
+=======
+const Workflow = require("../models/workflow.model"); // import workflow model
+const { getWorkflowGraph } = require("../utils/workflowMetadata");
+// -----------------------------
+// Utility: Response Helpers
+// -----------------------------
+function sendError(res, code, message) {
+  return res.status(code).json({ ok: false, error: message });
+}
+>>>>>>> upstream/main
 
 /**
  * POST /api/tasks/:taskId/resume
@@ -9,12 +20,60 @@ async function resumeFailedTask(req, res) {
     const { taskId } = req.params;
     const { resumeFromStepId } = req.body;
 
+<<<<<<< HEAD
     // Find the task targeting the failure path
     const task = await Task.findById(taskId);
     if (!task) {
       return res.status(404).json({ 
         success: false, 
         message: "Task not found" 
+=======
+    let workflow = null;
+    let steps = [];
+    let edges = [];
+    let agentId = null;
+
+    if (workflowId) {
+      workflow = await Workflow.findOne({
+        _id: workflowId,
+        userId: req.user._id
+      });
+      if (!workflow) {
+        return sendError(res, 404, "workflow_not_found");
+      }
+
+      agentId = workflow.agentId || null;
+
+      // Single source of truth: workflow.metadata.{steps,edges}
+      ({ steps, edges } = getWorkflowGraph(workflow));
+
+      if (steps.length === 0) {
+        return sendError(res, 400, "workflow_has_no_steps");
+      }
+    }
+
+    const task = await Task.create({
+      name: name || `Workflow Run - ${workflow?.name || "task"}`,
+      workflowId: workflowId || null,
+      agentId,
+      userId,
+      input: input || {},
+
+      // 🔥 THIS IS WHAT THE RUNNER EXECUTES
+      steps,
+      currentStep: 0,
+
+      metadata: {
+        ...(metadata || {}),
+        edges,
+        runningBy: "manual_run",
+      },
+    });
+
+    if (workflowId) {
+      await Workflow.findByIdAndUpdate(workflowId, {
+        $push: { tasks: task._id },
+>>>>>>> upstream/main
       });
     }
 

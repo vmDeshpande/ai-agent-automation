@@ -13,6 +13,7 @@ const {
   runWorkflowNow,
   updateWorkflowSteps,
   exportWorkflow,
+  cloneWorkflow
 } = require("../controllers/workflow.controller");
 
 const {
@@ -38,6 +39,9 @@ router.post("/:workflowId/run", expensiveLimiter, runWorkflowNow);
 router.get("/:id/versions", listWorkflowVersions);
 router.get("/:id/versions/:versionId", getWorkflowVersion);
 router.post("/:id/rollback/:versionId", rollbackWorkflow);
+
+// Action endpoints
+router.post("/:id/clone", cloneWorkflow);
 
 // THEN the generic ID routes
 router.get("/:id", getWorkflow);

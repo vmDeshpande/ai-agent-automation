@@ -1,19 +1,19 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { AppSidebar } from "@/components/app-sidebar";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { useTheme } from "next-themes";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { motion } from "framer-motion";
-import { Switch } from "@/components/ui/switch";
-import { useAssistantContext } from "@/context/assistant-context";
-import { useToast } from "@/hooks/use-toast";
-import { ChevronRightIcon } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { AppSidebar } from '@/components/app-sidebar';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { useTheme } from 'next-themes';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { motion } from 'framer-motion';
+import { Switch } from '@/components/ui/switch';
+import { useAssistantContext } from '@/context/assistant-context';
+import { useToast } from '@/hooks/use-toast';
+import { ChevronRightIcon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -22,8 +22,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuContent,
   DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
-import { apiUrl } from "@/lib/api";
+} from '@/components/ui/dropdown-menu';
+import { apiUrl } from '@/lib/api';
 
 /* -------------------------
    Types
@@ -33,14 +33,9 @@ type WorkerSettings = {
   maxAttempts: number;
 };
 
-type UiTheme = "light" | "dark" | "system" | "midnight" | "solarized";
+type UiTheme = 'light' | 'dark' | 'system' | 'midnight' | 'solarized';
 
-type AssistantProvider =
-  | "ollama"
-  | "groq"
-  | "openai"
-  | "gemini"
-  | "huggingface";
+type AssistantProvider = 'ollama' | 'groq' | 'openai' | 'gemini' | 'huggingface';
 
 type AssistantSettings = {
   enabled: boolean;
@@ -59,7 +54,7 @@ type DocumentChatSettings = {
 type McpServerSettings = {
   id: string;
   name: string;
-  transport: "stdio" | "streamable-http";
+  transport: 'stdio' | 'streamable-http';
   command: string;
   args: string[];
   url: string;
@@ -111,16 +106,16 @@ type SystemSettings = {
 };
 
 const PROVIDER_LABELS: Record<AssistantProvider, string> = {
-  ollama: "Ollama (Local)",
-  groq: "Groq",
-  openai: "OpenAI",
-  gemini: "Gemini",
-  huggingface: "Hugging Face",
+  ollama: 'Ollama (Local)',
+  groq: 'Groq',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  huggingface: 'Hugging Face',
 };
 
 const DEFAULT_TELEMETRY: TelemetryState = {
   enabled: false,
-  instanceId: "",
+  instanceId: '',
   lastHeartbeatAt: null,
   lastHeartbeatVersion: null,
   endpointConfigured: false,
@@ -140,7 +135,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     maxAttempts: 3,
   },
   ui: {
-    theme: "dark",
+    theme: 'dark',
   },
   assistant: {
     enabled: false,
@@ -149,7 +144,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   },
   documentChat: {
     enabled: true,
-    provider: "ollama",
+    provider: 'ollama',
     model: null,
     topK: 3,
     temperature: 0.2,
@@ -170,11 +165,11 @@ const DEFAULT_MCP_RUNTIME: McpRuntimeState = {
 function createEmptyMcpServer(): McpServerSettings {
   return {
     id: `mcp-${Date.now()}`,
-    name: "New MCP Server",
-    transport: "stdio",
-    command: "",
+    name: 'New MCP Server',
+    transport: 'stdio',
+    command: '',
     args: [],
-    url: "",
+    url: '',
     headers: {},
     env: {},
     enabled: true,
@@ -186,16 +181,16 @@ function createEmptyMcpServer(): McpServerSettings {
 function toKeyValueText(value: Record<string, string>) {
   return Object.entries(value || {})
     .map(([key, entry]) => `${key}=${entry}`)
-    .join("\n");
+    .join('\n');
 }
 
 function fromKeyValueText(value: string) {
   return value
-    .split("\n")
+    .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .reduce<Record<string, string>>((acc, line) => {
-      const idx = line.indexOf("=");
+      const idx = line.indexOf('=');
       if (idx === -1) return acc;
       const key = line.slice(0, idx).trim();
       const entry = line.slice(idx + 1).trim();
@@ -207,19 +202,16 @@ function fromKeyValueText(value: string) {
 /* -------------------------
    Theme transition helper
 ------------------------- */
-function applyThemeWithTransition(
-  setTheme: (theme: string) => void,
-  theme: UiTheme,
-) {
+function applyThemeWithTransition(setTheme: (theme: string) => void, theme: UiTheme) {
   const root = document.documentElement;
 
-  root.classList.add("theme-transition");
+  root.classList.add('theme-transition');
   root.getBoundingClientRect(); // force reflow
 
   setTheme(theme);
 
   setTimeout(() => {
-    root.classList.remove("theme-transition");
+    root.classList.remove('theme-transition');
   }, 300);
 }
 
@@ -246,9 +238,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { addToast } = useToast();
   const { setMode } = useAssistantContext();
-  const [mcpRuntime, setMcpRuntime] = useState<McpRuntimeState>(
-    DEFAULT_MCP_RUNTIME,
-  );
+  const [mcpRuntime, setMcpRuntime] = useState<McpRuntimeState>(DEFAULT_MCP_RUNTIME);
 
   const [availableProviders, setAvailableProviders] = useState<{
     ollama?: boolean;
@@ -276,9 +266,9 @@ export default function SettingsPage() {
   ------------------------- */
   async function loadSettings() {
     try {
-      const res = await fetch(apiUrl("/settings"), {
+      const res = await fetch(apiUrl('/settings'), {
         headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
       });
 
@@ -318,16 +308,16 @@ export default function SettingsPage() {
         setTheme(merged.ui.theme);
       }
     } catch (err) {
-      console.error("Failed to load settings", err);
+      console.error('Failed to load settings', err);
     } finally {
       setLoading(false);
     }
   }
 
   async function loadEnv() {
-    const res = await fetch(apiUrl("/system/env"), {
+    const res = await fetch(apiUrl('/system/env'), {
       headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
+        Authorization: 'Bearer ' + localStorage.getItem('token'),
       },
     });
 
@@ -337,9 +327,9 @@ export default function SettingsPage() {
 
   async function loadTelemetry() {
     try {
-      const res = await fetch(apiUrl("/telemetry"), {
+      const res = await fetch(apiUrl('/telemetry'), {
         headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
       });
       const data = await res.json();
@@ -347,17 +337,17 @@ export default function SettingsPage() {
         setTelemetry(data.telemetry);
       }
     } catch (err) {
-      console.error("Failed to load telemetry", err);
+      console.error('Failed to load telemetry', err);
     }
   }
 
   async function saveTelemetryEnabled(enabled: boolean) {
     try {
-      const res = await fetch(apiUrl("/telemetry"), {
-        method: "PUT",
+      const res = await fetch(apiUrl('/telemetry'), {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
         body: JSON.stringify({ enabled }),
       });
@@ -365,28 +355,26 @@ export default function SettingsPage() {
       if (data.ok && data.telemetry) {
         setTelemetry(data.telemetry);
         addToast({
-          type: "success",
-          title: "Telemetry Updated",
-          description: `Anonymous telemetry has been ${
-            enabled ? "enabled" : "disabled"
-          }.`,
+          type: 'success',
+          title: 'Telemetry Updated',
+          description: `Anonymous telemetry has been ${enabled ? 'enabled' : 'disabled'}.`,
         });
       }
     } catch (err) {
-      console.error("Failed to save telemetry", err);
+      console.error('Failed to save telemetry', err);
       addToast({
-        type: "error",
-        title: "Telemetry Save Failed",
-        description: "Could not update telemetry preferences.",
+        type: 'error',
+        title: 'Telemetry Save Failed',
+        description: 'Could not update telemetry preferences.',
       });
     }
   }
 
   useEffect(() => {
     if (settings.assistant?.enabled) {
-      setMode("online");
+      setMode('online');
     } else {
-      setMode("offline");
+      setMode('offline');
     }
   }, [settings.assistant?.enabled]);
 
@@ -397,20 +385,20 @@ export default function SettingsPage() {
     try {
       setSavingWorker(true);
 
-      await fetch(apiUrl("/settings"), {
-        method: "PUT",
+      await fetch(apiUrl('/settings'), {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
         body: JSON.stringify({
           worker: settings.worker,
         }),
       });
       addToast({
-        type: "success",
-        title: "Worker Settings Saved",
-        description: "Your Worker Settings were updated successfully",
+        type: 'success',
+        title: 'Worker Settings Saved',
+        description: 'Your Worker Settings were updated successfully',
       });
     } finally {
       setSavingWorker(false);
@@ -421,11 +409,11 @@ export default function SettingsPage() {
     try {
       setSavingMcp(true);
 
-      const res = await fetch(apiUrl("/settings"), {
-        method: "PUT",
+      const res = await fetch(apiUrl('/settings'), {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
         body: JSON.stringify({
           mcp: settings.mcp,
@@ -434,36 +422,33 @@ export default function SettingsPage() {
 
       const data = await res.json();
       if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || "Failed to save MCP settings");
+        throw new Error(data?.error || 'Failed to save MCP settings');
       }
 
       addToast({
-        type: "success",
-        title: "MCP Settings Saved",
-        description: "Your MCP configuration was updated successfully.",
+        type: 'success',
+        title: 'MCP Settings Saved',
+        description: 'Your MCP configuration was updated successfully.',
       });
     } catch (err) {
-      console.error("Failed to save MCP settings", err);
+      console.error('Failed to save MCP settings', err);
       addToast({
-        type: "error",
-        title: "MCP Save Failed",
-        description: "Could not update MCP configuration.",
+        type: 'error',
+        title: 'MCP Save Failed',
+        description: 'Could not update MCP configuration.',
       });
     } finally {
       setSavingMcp(false);
     }
   }
 
-  function updateMcpServer(
-    serverId: string,
-    patch: Partial<McpServerSettings>,
-  ) {
+  function updateMcpServer(serverId: string, patch: Partial<McpServerSettings>) {
     setSettings((prev) => ({
       ...prev,
       mcp: {
         ...prev.mcp,
         servers: prev.mcp.servers.map((server) =>
-          server.id === serverId ? { ...server, ...patch } : server,
+          server.id === serverId ? { ...server, ...patch } : server
         ),
       },
     }));
@@ -500,19 +485,19 @@ export default function SettingsPage() {
       ui: { theme: value },
     }));
 
-    await fetch(apiUrl("/settings"), {
-      method: "PUT",
+    await fetch(apiUrl('/settings'), {
+      method: 'PUT',
       headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + localStorage.getItem("token"),
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + localStorage.getItem('token'),
       },
       body: JSON.stringify({
         ui: { theme: value },
       }),
     });
     addToast({
-      type: "success",
-      title: "Theme Changed",
+      type: 'success',
+      title: 'Theme Changed',
       description: `Theme changed to ${value}`,
     });
   }
@@ -536,13 +521,11 @@ export default function SettingsPage() {
           <AppSidebar />
           <main
             className="flex-1 transition-[padding] duration-300"
-            style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
+            style={{ paddingLeft: 'var(--sidebar-width, 256px)' }}
           >
             <div className="p-8">
               <h1 className="text-3xl font-bold mb-2">Settings</h1>
-              <p className="mb-8 text-muted-foreground">
-                Manage your system preferences
-              </p>
+              <p className="mb-8 text-muted-foreground">Manage your system preferences</p>
 
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                 {/* Worker */}
@@ -591,7 +574,7 @@ export default function SettingsPage() {
                       disabled={savingWorker}
                       className="w-full md:w-auto"
                     >
-                      {savingWorker ? "Saving…" : "Save"}
+                      {savingWorker ? 'Saving…' : 'Save'}
                     </Button>
                   </Card>
                 </motion.div>
@@ -606,11 +589,11 @@ export default function SettingsPage() {
 
                     {env && (
                       <div className="space-y-1 text-sm">
-                        <div>Groq API: {env.groq ? "✅" : "❌"}</div>
-                        <div>Ollama API: {env.ollama ? "✅" : "❌"}</div>
-                        <div>OpenAI API: {env.openai ? "✅" : "❌"}</div>
-                        <div>Gemini API: {env.gemini ? "✅" : "❌"}</div>
-                        <div>HF API: {env.hf ? "✅" : "❌"}</div>
+                        <div>Groq API: {env.groq ? '✅' : '❌'}</div>
+                        <div>Ollama API: {env.ollama ? '✅' : '❌'}</div>
+                        <div>OpenAI API: {env.openai ? '✅' : '❌'}</div>
+                        <div>Gemini API: {env.gemini ? '✅' : '❌'}</div>
+                        <div>HF API: {env.hf ? '✅' : '❌'}</div>
                       </div>
                     )}
                   </Card>
@@ -621,11 +604,7 @@ export default function SettingsPage() {
                   <Card className="p-6">
                     <h2 className="mb-4 text-lg font-semibold">Appearance</h2>
 
-                    <RadioGroup
-                      value={theme}
-                      onValueChange={changeTheme}
-                      className="space-y-3"
-                    >
+                    <RadioGroup value={theme} onValueChange={changeTheme} className="space-y-3">
                       <ThemeOption value="light" label="Light" />
                       <ThemeOption value="dark" label="Dark" />
                       <ThemeOption value="midnight" label="Midnight" />
@@ -666,12 +645,11 @@ export default function SettingsPage() {
 
                           setSettings(updated);
 
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               assistant: updated.assistant,
@@ -690,11 +668,8 @@ export default function SettingsPage() {
                           <button className="w-full border rounded-md px-3 py-2 bg-background text-left flex items-center justify-between">
                             <span>
                               {settings.assistant?.provider
-                                ? PROVIDER_LABELS[
-                                    settings.assistant
-                                      .provider as AssistantProvider
-                                  ]
-                                : "Select Provider"}
+                                ? PROVIDER_LABELS[settings.assistant.provider as AssistantProvider]
+                                : 'Select Provider'}
                             </span>
                             <ChevronRightIcon className="rotate-90 size-4 opacity-60" />
                           </button>
@@ -705,12 +680,10 @@ export default function SettingsPage() {
                           <DropdownMenuSeparator />
 
                           <DropdownMenuRadioGroup
-                            value={settings.assistant?.provider ?? ""}
+                            value={settings.assistant?.provider ?? ''}
                             onValueChange={async (value) => {
                               const provider: AssistantProvider | null =
-                                value === ""
-                                  ? null
-                                  : (value as AssistantProvider);
+                                value === '' ? null : (value as AssistantProvider);
 
                               const updated = {
                                 ...settings,
@@ -722,12 +695,11 @@ export default function SettingsPage() {
 
                               setSettings(updated);
 
-                              await fetch(apiUrl("/settings"), {
-                                method: "PUT",
+                              await fetch(apiUrl('/settings'), {
+                                method: 'PUT',
                                 headers: {
-                                  "Content-Type": "application/json",
-                                  Authorization:
-                                    "Bearer " + localStorage.getItem("token"),
+                                  'Content-Type': 'application/json',
+                                  Authorization: 'Bearer ' + localStorage.getItem('token'),
                                 },
                                 body: JSON.stringify({
                                   assistant: updated.assistant,
@@ -741,7 +713,7 @@ export default function SettingsPage() {
                                   <DropdownMenuRadioItem key={key} value={key}>
                                     {PROVIDER_LABELS[key as AssistantProvider]}
                                   </DropdownMenuRadioItem>
-                                ),
+                                )
                             )}
                           </DropdownMenuRadioGroup>
                         </DropdownMenuContent>
@@ -750,12 +722,10 @@ export default function SettingsPage() {
 
                     {/* Model Input */}
                     <div>
-                      <Label className="mb-2 block">
-                        Model (Optional Override)
-                      </Label>
+                      <Label className="mb-2 block">Model (Optional Override)</Label>
                       <Input
                         placeholder="Leave empty for default"
-                        value={settings.assistant?.model ?? ""}
+                        value={settings.assistant?.model ?? ''}
                         onChange={(e) =>
                           setSettings((prev) => ({
                             ...prev,
@@ -766,12 +736,11 @@ export default function SettingsPage() {
                           }))
                         }
                         onBlur={async () => {
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               assistant: settings.assistant,
@@ -814,12 +783,11 @@ export default function SettingsPage() {
 
                           setSettings(updated);
 
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               documentChat: updated.documentChat,
@@ -839,10 +807,9 @@ export default function SettingsPage() {
                             <span>
                               {settings.documentChat?.provider
                                 ? PROVIDER_LABELS[
-                                    settings.documentChat
-                                      .provider as AssistantProvider
+                                    settings.documentChat.provider as AssistantProvider
                                   ]
-                                : "Select Provider"}
+                                : 'Select Provider'}
                             </span>
 
                             <ChevronRightIcon className="rotate-90 size-4 opacity-60" />
@@ -854,12 +821,10 @@ export default function SettingsPage() {
                           <DropdownMenuSeparator />
 
                           <DropdownMenuRadioGroup
-                            value={settings.documentChat?.provider ?? ""}
+                            value={settings.documentChat?.provider ?? ''}
                             onValueChange={async (value) => {
                               const provider: AssistantProvider | null =
-                                value === ""
-                                  ? null
-                                  : (value as AssistantProvider);
+                                value === '' ? null : (value as AssistantProvider);
 
                               const updated = {
                                 ...settings,
@@ -871,12 +836,11 @@ export default function SettingsPage() {
 
                               setSettings(updated);
 
-                              await fetch(apiUrl("/settings"), {
-                                method: "PUT",
+                              await fetch(apiUrl('/settings'), {
+                                method: 'PUT',
                                 headers: {
-                                  "Content-Type": "application/json",
-                                  Authorization:
-                                    "Bearer " + localStorage.getItem("token"),
+                                  'Content-Type': 'application/json',
+                                  Authorization: 'Bearer ' + localStorage.getItem('token'),
                                 },
                                 body: JSON.stringify({
                                   documentChat: updated.documentChat,
@@ -890,7 +854,7 @@ export default function SettingsPage() {
                                   <DropdownMenuRadioItem key={key} value={key}>
                                     {PROVIDER_LABELS[key as AssistantProvider]}
                                   </DropdownMenuRadioItem>
-                                ),
+                                )
                             )}
                           </DropdownMenuRadioGroup>
                         </DropdownMenuContent>
@@ -899,13 +863,11 @@ export default function SettingsPage() {
 
                     {/* Model Input */}
                     <div>
-                      <Label className="mb-2 block">
-                        Model (Optional Override)
-                      </Label>
+                      <Label className="mb-2 block">Model (Optional Override)</Label>
 
                       <Input
                         placeholder="Leave empty for default"
-                        value={settings.documentChat?.model ?? ""}
+                        value={settings.documentChat?.model ?? ''}
                         onChange={(e) =>
                           setSettings((prev) => ({
                             ...prev,
@@ -916,12 +878,11 @@ export default function SettingsPage() {
                           }))
                         }
                         onBlur={async () => {
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               documentChat: settings.documentChat,
@@ -948,12 +909,11 @@ export default function SettingsPage() {
                           })
                         }
                         onBlur={async () => {
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               documentChat: settings.documentChat,
@@ -981,12 +941,11 @@ export default function SettingsPage() {
                           })
                         }
                         onBlur={async () => {
-                          await fetch(apiUrl("/settings"), {
-                            method: "PUT",
+                          await fetch(apiUrl('/settings'), {
+                            method: 'PUT',
                             headers: {
-                              "Content-Type": "application/json",
-                              Authorization:
-                                "Bearer " + localStorage.getItem("token"),
+                              'Content-Type': 'application/json',
+                              Authorization: 'Bearer ' + localStorage.getItem('token'),
                             },
                             body: JSON.stringify({
                               documentChat: settings.documentChat,
@@ -994,6 +953,72 @@ export default function SettingsPage() {
                           });
                         }}
                       />
+                    </div>
+                  </Card>
+                </motion.div>
+
+                {/* Telemetry */}
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Card className="p-6 space-y-4">
+                    <h2 className="text-lg font-semibold">Telemetry</h2>
+
+                    <p className="text-sm text-muted-foreground">
+                      Optional anonymous telemetry is local-first and opt-in. No prompts, documents,
+                      or user data are collected.
+                    </p>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Enable anonymous telemetry</div>
+                        <div className="text-xs text-muted-foreground">
+                          Use a random instance ID and minimal system metadata.
+                        </div>
+                      </div>
+                      <Switch checked={telemetry.enabled} onCheckedChange={saveTelemetryEnabled} />
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        Instance ID:{' '}
+                        <span className="font-mono">
+                          {telemetry.instanceId || 'not generated yet'}
+                        </span>
+                      </div>
+                      <div>
+                        Heartbeat:{' '}
+                        {telemetry.lastHeartbeatAt
+                          ? new Date(telemetry.lastHeartbeatAt).toLocaleString()
+                          : 'not sent yet'}
+                      </div>
+                      <div>Endpoint configured: {telemetry.endpointConfigured ? 'Yes' : 'No'}</div>
+                      <div>
+                        <div>Workflow executions: {telemetry.localMetrics.workflowExecutions}</div>
+                        <div>
+                          Average task duration:{' '}
+                          {telemetry.localMetrics.taskRuns > 0
+                            ? Math.round(
+                                telemetry.localMetrics.totalTaskDurationMs /
+                                  telemetry.localMetrics.taskRuns
+                              )
+                            : 0}{' '}
+                          ms
+                        </div>
+                        <div>Step executions: {telemetry.localMetrics.totalStepExecutions}</div>
+                        {Object.entries(telemetry.localMetrics.stepTypeCounts).length > 0 && (
+                          <div>
+                            Step type usage:
+                            <ul className="ml-4 list-disc">
+                              {Object.entries(telemetry.localMetrics.stepTypeCounts).map(
+                                ([type, count]) => (
+                                  <li key={type}>
+                                    {type}: {count}
+                                  </li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </Card>
                 </motion.div>
@@ -1009,20 +1034,20 @@ export default function SettingsPage() {
                       <div>
                         <h2 className="text-lg font-semibold">MCP Servers</h2>
                         <p className="text-sm text-muted-foreground">
-                          Configure local stdio and remote streamable HTTP MCP
-                          servers for workflow steps.
+                          Configure local stdio and remote streamable HTTP MCP servers for workflow
+                          steps.
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right text-xs text-muted-foreground">
-                          <div>Env enabled: {mcpRuntime.envEnabled ? "Yes" : "No"}</div>
+                          <div>Env enabled: {mcpRuntime.envEnabled ? 'Yes' : 'No'}</div>
                           <div>
                             Env config:
                             {mcpRuntime.configPath
                               ? ` ${mcpRuntime.configPath}`
                               : mcpRuntime.hasConfigJson || mcpRuntime.hasServerUrl
-                                ? " inline"
-                                : " none"}
+                                ? ' inline'
+                                : ' none'}
                           </div>
                         </div>
                         <Switch
@@ -1044,12 +1069,8 @@ export default function SettingsPage() {
                       <Button type="button" variant="outline" onClick={addMcpServer}>
                         Add Server
                       </Button>
-                      <Button
-                        type="button"
-                        onClick={saveMcpSettings}
-                        disabled={savingMcp}
-                      >
-                        {savingMcp ? "Saving…" : "Save MCP Settings"}
+                      <Button type="button" onClick={saveMcpSettings} disabled={savingMcp}>
+                        {savingMcp ? 'Saving…' : 'Save MCP Settings'}
                       </Button>
                     </div>
 
@@ -1078,9 +1099,7 @@ export default function SettingsPage() {
                               <Label>ID</Label>
                               <Input
                                 value={server.id}
-                                onChange={(e) =>
-                                  updateMcpServer(server.id, { id: e.target.value })
-                                }
+                                onChange={(e) => updateMcpServer(server.id, { id: e.target.value })}
                               />
                             </div>
                             <div>
@@ -1099,16 +1118,12 @@ export default function SettingsPage() {
                                 value={server.transport}
                                 onChange={(e) =>
                                   updateMcpServer(server.id, {
-                                    transport: e.target.value as
-                                      | "stdio"
-                                      | "streamable-http",
+                                    transport: e.target.value as 'stdio' | 'streamable-http',
                                   })
                                 }
                               >
                                 <option value="stdio">stdio</option>
-                                <option value="streamable-http">
-                                  streamable-http
-                                </option>
+                                <option value="streamable-http">streamable-http</option>
                               </select>
                             </div>
                             <div>
@@ -1125,7 +1140,7 @@ export default function SettingsPage() {
                             </div>
                           </div>
 
-                          {server.transport === "stdio" ? (
+                          {server.transport === 'stdio' ? (
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                               <div>
                                 <Label>Command</Label>
@@ -1141,11 +1156,11 @@ export default function SettingsPage() {
                               <div>
                                 <Label>Args (space-separated)</Label>
                                 <Input
-                                  value={server.args.join(" ")}
+                                  value={server.args.join(' ')}
                                   onChange={(e) =>
                                     updateMcpServer(server.id, {
                                       args: e.target.value
-                                        .split(" ")
+                                        .split(' ')
                                         .map((item) => item.trim())
                                         .filter(Boolean),
                                     })
@@ -1220,87 +1235,6 @@ export default function SettingsPage() {
                           </div>
                         </div>
                       ))}
-                    </div>
-                  </Card>
-                </motion.div>
-
-                {/* Telemetry */}
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <Card className="p-6 space-y-4">
-                    <h2 className="text-lg font-semibold">Telemetry</h2>
-
-                    <p className="text-sm text-muted-foreground">
-                      Optional anonymous telemetry is local-first and opt-in. No
-                      prompts, documents, or user data are collected.
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">
-                          Enable anonymous telemetry
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Use a random instance ID and minimal system metadata.
-                        </div>
-                      </div>
-                      <Switch
-                        checked={telemetry.enabled}
-                        onCheckedChange={saveTelemetryEnabled}
-                      />
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        Instance ID:{" "}
-                        <span className="font-mono">
-                          {telemetry.instanceId || "not generated yet"}
-                        </span>
-                      </div>
-                      <div>
-                        Heartbeat:{" "}
-                        {telemetry.lastHeartbeatAt
-                          ? new Date(telemetry.lastHeartbeatAt).toLocaleString()
-                          : "not sent yet"}
-                      </div>
-                      <div>
-                        Endpoint configured:{" "}
-                        {telemetry.endpointConfigured ? "Yes" : "No"}
-                      </div>
-                      <div>
-                        <div>
-                          Workflow executions:{" "}
-                          {telemetry.localMetrics.workflowExecutions}
-                        </div>
-                        <div>
-                          Average task duration:{" "}
-                          {telemetry.localMetrics.taskRuns > 0
-                            ? Math.round(
-                                telemetry.localMetrics.totalTaskDurationMs /
-                                  telemetry.localMetrics.taskRuns,
-                              )
-                            : 0}{" "}
-                          ms
-                        </div>
-                        <div>
-                          Step executions:{" "}
-                          {telemetry.localMetrics.totalStepExecutions}
-                        </div>
-                        {Object.entries(telemetry.localMetrics.stepTypeCounts)
-                          .length > 0 && (
-                          <div>
-                            Step type usage:
-                            <ul className="ml-4 list-disc">
-                              {Object.entries(
-                                telemetry.localMetrics.stepTypeCounts,
-                              ).map(([type, count]) => (
-                                <li key={type}>
-                                  {type}: {count}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </Card>
                 </motion.div>

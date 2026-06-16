@@ -3,7 +3,7 @@
 /**
  * Fetch the current top stories from HackerNews.
  * We use the native fetch API (available in Node 18+).
- * * @param {number} limit - How many stories to return (default 5, max 30).
+ * @param {number} limit - How many stories to return (default 5, max 30).
  * @returns {Promise<Array|Object>} Array of story objects, or an error object.
  */
 async function getTopStories(limit = 5) {
@@ -64,4 +64,12 @@ async function getTopStories(limit = 5) {
   }
 }
 
-module.exports = { getTopStories };
+/**
+ * Standardized Tool Contract Interface Mapping Implementation
+ */
+async function run(step, context, interpolate) {
+  const parsedLimit = step.limit || 5;
+  return await getTopStories(parsedLimit);
+}
+
+module.exports = { getTopStories, run };

@@ -11,7 +11,9 @@ export type StepType =
   | "Switch"
   | "GitHub"
   | "Slack"
-  | "Discord";
+  | "Discord"
+  | "Parallel"
+  | "Join";
 
 export type ToolType = "email" | "file" | "browser";
 
@@ -23,6 +25,9 @@ export interface WorkflowNode {
     x: number;
     y: number;
   };
+
+  // Parallel Execution
+  failureStrategy?: "fail-fast" | "continue-on-error";
 
   // LLM
   useMemory?: boolean;
@@ -107,12 +112,19 @@ export interface BackendStep {
     | "browser"
     | "github"
     | "slack"
-    | "discord";
+    | "discord"
+    | "parallel"
+    | "join"
+    | "Parallel"
+    | "Join";
 
   position?: {
     x: number;
     y: number;
   };
+  
+  failureStrategy?: "fail-fast" | "continue-on-error";
+  
   useMemory?: boolean;
   memoryTopK?: number;
   prompt?: string;

@@ -1,6 +1,4 @@
 // backend/src/tools/fileTool.js
-// simple file read/write in a safe folder. Beware: do not use for storing secrets.
-// Provides write, append, read, remove, list
 const fs = require("fs");
 const path = require("path");
 const util = require("util");
@@ -14,18 +12,10 @@ const stat = util.promisify(fs.stat);
 
 const BASE_DIR = path.resolve(process.env.FILE_BASE_DIR || path.join(process.cwd(), "runtime/sandbox"));
 
-// Ensure the parent directory of a path exists
 async function ensureDir(dirPath) {
-  try {
-    await mkdirp(dirPath, { recursive: true });
-  } catch (e) {
-    // ignore
-  }
+  try { await mkdirp(dirPath, { recursive: true }); } catch (e) {}
 }
 
-/**
- * Resolves a path relative to the BASE_DIR and prevents directory traversal.
- */
 function resolveSafePath(filePath) {
   const resolved = path.resolve(BASE_DIR, filePath);
   const relative = path.relative(BASE_DIR, resolved);
@@ -38,12 +28,9 @@ function resolveSafePath(filePath) {
 async function write(filename, content, opts = {}) {
   const fullPath = resolveSafePath(filename);
   await ensureDir(path.dirname(fullPath));
-
-  // limit file size (default 5MB)
   const maxBytes = opts.maxBytes || 5 * 1024 * 1024;
   const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
   if (buf.length > maxBytes) throw new Error("File too large");
-
   await writeFile(fullPath, buf);
   const relative = path.relative(BASE_DIR, fullPath);
   return { path: fullPath, filename: relative, size: buf.length };
@@ -52,9 +39,7 @@ async function write(filename, content, opts = {}) {
 async function append(filename, content, opts = {}) {
   const fullPath = resolveSafePath(filename);
   await ensureDir(path.dirname(fullPath));
-
   const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
-  // Append uses a newline by default to separate log-like writes
   await appendFile(fullPath, Buffer.concat([buf, Buffer.from("\n")]));
   const relative = path.relative(BASE_DIR, fullPath);
   return { path: fullPath, filename: relative };
@@ -62,8 +47,7 @@ async function append(filename, content, opts = {}) {
 
 async function read(filename, opts = {}) {
   const fullPath = resolveSafePath(filename);
-  const content = await readFile(fullPath, "utf8");
-  return content;
+  return await readFile(fullPath, "utf8");
 }
 
 async function remove(filename) {
@@ -86,4 +70,28 @@ async function list(subDir = "") {
   return out;
 }
 
-module.exports = { write, append, read, remove, list, BASE_DIR };
+/**
+ * Standardized Tool Contract Interface Mapping Implementation
+ */
+async function run(step, context, interpolate) {
+  const targetFunction = (step.action || "read").toLowerCase();
+  const requestedPath = step.path || `stepName_${step.name}_TaskId_${context.taskId}.txt`;
+  const content = step.content || "";
+
+  switch (targetFunction) {
+    case "write":
+      return await write(requestedPath, content);
+    case "append":
+      return await append(requestedPath, content);
+    case "read":
+      return await read(requestedPath);
+    case "remove":
+      return await remove(requestedPath);
+    case "list":
+      return await list(requestedPath);
+    default:
+      throw new Error(`Unsupported file action matrix descriptor: [${targetFunction}]`);
+  }
+}
+
+module.exports = { write, append, read, remove, list, BASE_DIR, run };
