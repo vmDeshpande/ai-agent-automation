@@ -16,10 +16,9 @@
 
 <p align="center">
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/docs">Documentation</a> ·
-  <a href="docs/telemetry.md">Telemetry</a> ·
-  <a href="https://vmdeshpande.github.io/ai-automation-platform-website/features/">Features</a> ·
-  <a href="https://vmdeshpande.github.io/ai-automation-platform-website/architecture/">Architecture</a> ·
-  <a href="https://github.com/vmDeshpande/ai-agent-automation/issues">Issues</a><br><br>
+<a href="docs/telemetry.md">Telemetry</a> ·
+<a href="docs/privacy-policy.md">Privacy Policy</a> ·
+<a href="https://vmdeshpande.github.io/ai-automation-platform-website/features/">Features</a> ·
 </p>
 
 ---
