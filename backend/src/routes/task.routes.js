@@ -9,6 +9,7 @@ const {
   approveTask,
   rejectTask,
   resumeTask,
+  rerunFromFailedStep,
 } = require("../controllers/task.controller");
 
 router.post("/", authMiddleware, createTask);
@@ -21,5 +22,6 @@ router.delete("/:id", authMiddleware, deleteTask);
 router.post("/:id/approve", authMiddleware, approveTask);
 router.post("/:id/reject", authMiddleware, rejectTask);
 router.post("/:id/resume", authMiddleware, resumeTask);
+router.post("/:id/rerun-from-failed", authMiddleware, rerunFromFailedStep);
 
 module.exports = router;

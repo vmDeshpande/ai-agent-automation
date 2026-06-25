@@ -1,6 +1,6 @@
 const Task = require("../models/task.model");
 const Workflow = require("../models/workflow.model"); // import workflow model
-const { getWorkflowGraph } = require("../utils/workflowMetadata");
+const { getWorkflowGraph, computeGraphHash } = require("../utils/workflowMetadata");
 // -----------------------------
 // Utility: Response Helpers
 // -----------------------------
@@ -348,6 +348,89 @@ async function resumeTask(req, res) {
   }
 }
 
+// -----------------------------
+// Rerun from Failed Step
+// POST /api/tasks/:id/rerun-from-failed
+// -----------------------------
+async function rerunFromFailedStep(req, res) {
+  try {
+    const userId = req.user._id;
+    const taskId = req.params.id;
+
+    const task = await Task.findById(taskId);
+    if (!task) return sendError(res, 404, "not_found");
+    if (task.userId.toString() !== userId.toString())
+      return sendError(res, 403, "forbidden");
+    if (task.status !== "failed")
+      return sendError(res, 400, "task_not_failed");
+
+    const stepResults = task.stepResults || [];
+    const failedResult = stepResults.find((sr) => sr.success === false);
+    if (!failedResult)
+      return sendError(res, 400, "no_failed_step_found");
+
+    // Copy all successful stepResults so the runner fast-forwards through them
+    const prepopulatedResults = stepResults
+      .filter((sr) => sr.success === true)
+      .map((sr) => ({
+        stepId: sr.stepId,
+        type: sr.type,
+        tool: sr.tool,
+        serverId: sr.serverId,
+        toolName: sr.toolName,
+        position: sr.position,
+        input: sr.input,
+        output: sr.output,
+        success: sr.success,
+        timestamp: sr.timestamp,
+        durationMs: sr.durationMs,
+        metrics: sr.metrics,
+        metadata: {
+          replayedFromTaskId: taskId,
+          isReplaySnapshot: true,
+        },
+      }));
+
+    if (prepopulatedResults.length === 0)
+      return sendError(res, 400, "no_successful_steps_to_replay");
+
+    // Compute graph hash from the task's own steps/edges for consistency
+    const steps = task.steps || task.metadata?.steps || [];
+    const edges = task.metadata?.edges || [];
+    const graphHash = computeGraphHash(steps, edges);
+
+    const newTask = await Task.create({
+      name: `Rerun - ${task.name}`,
+      workflowId: task.workflowId,
+      agentId: task.agentId,
+      userId,
+      input: task.input || {},
+      steps,
+      currentStep: 0,
+      metadata: {
+        ...(task.metadata || {}),
+        runningBy: "rerun_from_failed",
+      },
+      status: "pending",
+      executionMode: "partial",
+      parentTaskId: taskId,
+      stepResults: prepopulatedResults,
+      graphHash,
+    });
+
+    if (task.workflowId) {
+      await Workflow.findByIdAndUpdate(task.workflowId, {
+        $push: { tasks: newTask._id },
+      });
+    }
+
+    return sendOK(res, { task: newTask });
+  } catch (err) {
+    console.error("rerunFromFailedStep error:", err);
+    return sendError(res, 500, "server_error");
+  }
+}
+
 module.exports = {
   createTask,
   listTasks,
@@ -357,4 +440,5 @@ module.exports = {
   approveTask,
   rejectTask,
   resumeTask,
+  rerunFromFailedStep,
 };

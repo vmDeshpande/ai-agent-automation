@@ -20,6 +20,7 @@ import {
   Database,
   ShieldCheck,
   Globe,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -147,6 +148,7 @@ export default function TaskDetailPage() {
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
   const [approvalFeedback, setApprovalFeedback] = useState("");
   const [isResuming, setIsResuming] = useState(false);
+  const [isRerunning, setIsRerunning] = useState(false);
 
   async function handleResumeTask() {
     if (!task) return;
@@ -177,6 +179,38 @@ export default function TaskDetailPage() {
       });
     } finally {
       setIsResuming(false);
+    }
+  }
+
+  async function handleRerunFromFailed() {
+    if (!task) return;
+    setIsRerunning(true);
+    try {
+      const res = await fetch(apiUrl(`/tasks/${task._id}/rerun-from-failed`), {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + localStorage.getItem("token"),
+        },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        addToast({
+          title: "Task Rerun Created",
+          description: "A new task has been queued, resuming from the failed step.",
+          type: "success"
+        });
+        router.push(`/tasks/${data.task._id}`);
+      } else {
+        throw new Error(data.error || "Failed to rerun task");
+      }
+    } catch (err: any) {
+      addToast({
+        title: "Error",
+        description: err.message || "Failed to rerun from failed step",
+        type: "error"
+      });
+    } finally {
+      setIsRerunning(false);
     }
   }
 
@@ -360,6 +394,18 @@ export default function TaskDetailPage() {
                 >
                   {task.status}
                 </Badge>
+                {task.status === "failed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRerunFromFailed}
+                    disabled={isRerunning}
+                    className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
+                  >
+                    <RotateCcw className="size-4 mr-1.5" />
+                    {isRerunning ? 'Creating...' : 'Rerun from Failed'}
+                  </Button>
+                )}
                 {["failed", "retrying", "rejected"].includes(task.status) && (
                   <Button 
                     variant="outline" 
