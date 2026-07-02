@@ -16,11 +16,13 @@ const templateRoutes = require("./routes/template.routes");
 const memoryRoutes = require("./routes/memory.routes");
 const assistantRoutes = require("./routes/assistant.routes");
 const telemetryRoutes = require("./routes/telemetry.routes");
+const helmetMiddleware = require("./middleware/helmet.middleware.js");
 require("dotenv").config();
 
 const app = express();
 
 app.use(cors());
+app.use(helmetMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
