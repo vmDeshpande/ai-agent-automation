@@ -18,7 +18,7 @@ export function PageHeader({
   children,
 }: PageHeaderProps) {
   return (
-    <header className="flex flex-col border-b border-border pb-6">
+    <header className="flex flex-col border-b border-border/40 pb-4">
       {breadcrumbs && (
         <nav aria-label="Breadcrumb" className="mb-3 flex items-center text-sm font-medium text-muted-foreground/70 transition-colors">
           {breadcrumbs}

@@ -13,15 +13,15 @@ export function PageHeaderSkeleton({ className }: { className?: string }) {
 
 export function MetricCardSkeleton({ className }: { className?: string }) {
   return (
-    <Card className={cn("p-5 flex flex-col justify-between border-border/30 bg-card/20 shadow-sm rounded-xl h-[120px]", className)} aria-hidden="true">
-      <div className="flex items-center justify-between mb-4">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="size-4" />
+    <Card className={cn("px-5 py-4 flex flex-col justify-center border-border/20 bg-card/10 shadow-sm rounded-xl min-h-[88px]", className)} aria-hidden="true">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-5 w-5 rounded-md shrink-0" />
+        <div className="flex items-center gap-2 w-full">
+          <Skeleton className="h-7 w-10" />
+          <Skeleton className="h-4 w-20" />
+        </div>
       </div>
-      <div className="mt-auto space-y-2">
-        <Skeleton className="h-8 w-16" />
-        <Skeleton className="h-3 w-32" />
-      </div>
+      <Skeleton className="h-3 w-28 mt-2 ml-8" />
     </Card>
   );
 }

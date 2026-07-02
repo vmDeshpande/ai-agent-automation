@@ -30,42 +30,42 @@ export function MetricCard({
 }: MetricCardProps) {
   if (loading) {
     return (
-      <Card className={cn("p-5 flex flex-col justify-between border-border/30 bg-card/20 shadow-sm rounded-xl", className)}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="h-4 w-24 bg-muted/50 animate-pulse rounded" />
-          <div className="h-4 w-4 bg-muted/50 animate-pulse rounded" />
+      <Card className={cn("px-5 py-4 flex flex-col justify-center border-border/20 bg-card/10 shadow-sm rounded-xl min-h-[88px]", className)}>
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-5 bg-muted/30 animate-pulse rounded-md shrink-0" />
+          <div className="flex items-center gap-2 w-full">
+            <div className="h-7 w-10 bg-muted/30 animate-pulse rounded" />
+            <div className="h-4 w-20 bg-muted/30 animate-pulse rounded" />
+          </div>
         </div>
-        <div className="h-8 w-16 bg-muted/50 animate-pulse rounded mb-2" />
-        <div className="h-3 w-32 bg-muted/50 animate-pulse rounded" />
+        <div className="h-3 w-28 bg-muted/20 animate-pulse rounded mt-2 ml-8" />
       </Card>
     );
   }
 
   return (
     <Card className={cn(
-      "group relative p-5 flex flex-col justify-between border-border/30 bg-card/20 shadow-sm rounded-xl",
-      "transition-all duration-300 hover:bg-card/40 hover:shadow-md hover:border-border/50",
+      "group relative px-5 py-4 flex flex-col justify-center border-border/15 bg-card/20 shadow-sm rounded-xl min-h-[88px]",
+      "transition-all duration-300 hover:bg-card/40 hover:border-border/30",
       className
     )}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-muted-foreground/80 tracking-tight">
-          {title}
-        </h3>
+      <div className="flex items-center gap-3">
         {Icon && (
-          <div className="flex items-center justify-center text-muted-foreground/40 transition-colors duration-300 group-hover:text-foreground/70">
-            <Icon className="size-4" aria-hidden="true" />
+          <div className="flex items-center justify-center text-muted-foreground/60 transition-colors duration-300 group-hover:text-foreground/80 shrink-0">
+            <Icon className="size-4.5" aria-hidden="true" />
           </div>
         )}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold tracking-tight text-foreground/95">
+        <div className="flex items-baseline gap-2 flex-wrap leading-none">
+          <span className="text-2xl font-medium tracking-tight text-foreground/95 group-hover:text-foreground transition-colors">
             {value}
           </span>
+          <h3 className="text-sm font-medium text-muted-foreground/70 tracking-tight group-hover:text-muted-foreground transition-colors">
+            {title}
+          </h3>
+          
           {trend && (
             <span className={cn(
-              "text-xs font-medium",
+              "text-xs font-medium ml-1",
               trend.isPositive ? "text-success/90" : "text-destructive/90"
             )}>
               <span className="sr-only">{trend.isPositive ? "Increased by" : "Decreased by"}</span>
@@ -74,16 +74,18 @@ export function MetricCard({
             </span>
           )}
         </div>
-        
-        {(subtitle || trend?.label) && (
-          <p className="text-xs text-muted-foreground/60 font-medium">
-            {subtitle} {trend?.label && <span className="ml-1">{trend.label}</span>}
-          </p>
-        )}
       </div>
 
+      {(subtitle || trend?.label) && (
+        <div className="mt-1.5 ml-7">
+          <p className="text-xs text-muted-foreground/50 font-medium">
+            {subtitle} {trend?.label && <span className="ml-1">{trend.label}</span>}
+          </p>
+        </div>
+      )}
+
       {footer && (
-        <div className="mt-4 pt-4 border-t border-border/20 text-xs text-muted-foreground/60">
+        <div className="mt-3 pt-3 border-t border-border/10 text-xs text-muted-foreground/50 ml-7">
           {footer}
         </div>
       )}
