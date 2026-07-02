@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { AuthContext } from "@/context/AuthContext";
 import { apiUrl } from "@/lib/api";
 
@@ -24,7 +24,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!token) return;
 
     try {
@@ -43,7 +43,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
 
   // 🔁 React to login / logout
   useEffect(() => {
@@ -55,10 +55,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     load();
-  }, [token]);
+  }, [token, load]);
+
+  const contextValue = useMemo(() => ({
+    settings,
+    loading,
+    reload: load
+  }), [settings, loading, load]);
 
   return (
-    <SettingsContext.Provider value={{ settings, loading, reload: load }}>
+    <SettingsContext.Provider value={contextValue}>
       {children}
     </SettingsContext.Provider>
   );

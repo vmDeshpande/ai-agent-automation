@@ -7,10 +7,13 @@
   "tags": ["browser", "screenshot", "automation"],
   "steps": [
     {
+      "stepId": "screenshot",
       "name": "Capture Website Screenshot",
       "type": "browser",
+      "position": { "x": 0, "y": 0 },
       "action": "screenshot",
       "url": "https://vmdeshpande.github.io/ai-automation-platform-website/"
     }
-  ]
+  ],
+  "edges": []
 }

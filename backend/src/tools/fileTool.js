@@ -1,70 +1,111 @@
 // backend/src/tools/fileTool.js
-// simple file read/write in a safe folder. Beware: do not use for storing secrets.
-// Provides readFile, writeFile, deleteFile, listFiles
 const fs = require("fs");
 const path = require("path");
 const util = require("util");
 const mkdirp = util.promisify(fs.mkdir);
 const readFile = util.promisify(fs.readFile);
 const writeFile = util.promisify(fs.writeFile);
+const appendFile = util.promisify(fs.appendFile);
 const unlink = util.promisify(fs.unlink);
 const readdir = util.promisify(fs.readdir);
 const stat = util.promisify(fs.stat);
 
-const BASE_DIR = path.resolve(process.env.FILE_BASE_DIR || path.join(process.cwd(), "uploads"));
+const BASE_DIR = path.resolve(process.env.FILE_BASE_DIR || path.join(process.cwd(), "runtime/sandbox"));
 
-// Ensure BASE_DIR exists
-async function ensureBaseDir() {
-  try {
-    await mkdirp(BASE_DIR, { recursive: true });
-  } catch (e) {
-    // ignore
-  }
+async function ensureDir(dirPath) {
+  try { await mkdirp(dirPath, { recursive: true }); } catch (e) {}
 }
 
-function sanitizeFilename(name) {
-  // very basic sanitization — remove path chars, keep safe chars
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+function resolveSafePath(filePath) {
+  const resolved = path.resolve(BASE_DIR, filePath);
+  const relative = path.relative(BASE_DIR, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Access denied: Path traversal detected for path: "${filePath}"`);
+  }
+  return resolved;
 }
 
 async function write(filename, content, opts = {}) {
-  await ensureBaseDir();
-  const safe = sanitizeFilename(filename);
-  const full = path.join(BASE_DIR, safe);
-
-  // limit file size (default 5MB)
+  const fullPath = resolveSafePath(filename);
+  await ensureDir(path.dirname(fullPath));
   const maxBytes = opts.maxBytes || 5 * 1024 * 1024;
   const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
-  if (buf.length > maxBytes) throw new Error("file_too_large");
+  if (buf.length > maxBytes) throw new Error("File too large");
+  await writeFile(fullPath, buf);
+  const relative = path.relative(BASE_DIR, fullPath);
+  return { path: fullPath, filename: relative, size: buf.length };
+}
 
-  await writeFile(full, buf);
-  return { path: full, filename: safe, size: buf.length };
+async function append(filename, content, opts = {}) {
+  const fullPath = resolveSafePath(filename);
+  await ensureDir(path.dirname(fullPath));
+  const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
+  await appendFile(fullPath, Buffer.concat([buf, Buffer.from("\n")]));
+  const relative = path.relative(BASE_DIR, fullPath);
+  return { path: fullPath, filename: relative };
 }
 
 async function read(filename, opts = {}) {
-  await ensureBaseDir();
-  const safe = sanitizeFilename(filename);
-  const full = path.join(BASE_DIR, safe);
-  return await readFile(full);
+  const fullPath = resolveSafePath(filename);
+  return await readFile(fullPath, "utf8");
 }
 
 async function remove(filename) {
-  await ensureBaseDir();
-  const safe = sanitizeFilename(filename);
-  const full = path.join(BASE_DIR, safe);
-  await unlink(full);
-  return { removed: safe };
+  const fullPath = resolveSafePath(filename);
+  await unlink(fullPath);
+  const relative = path.relative(BASE_DIR, fullPath);
+  return { removed: relative };
 }
 
-async function list() {
-  await ensureBaseDir();
-  const files = await readdir(BASE_DIR);
+async function list(subDir = "") {
+  const fullPath = resolveSafePath(subDir);
+  const files = await readdir(fullPath);
   const out = [];
   for (const f of files) {
-    const s = await stat(path.join(BASE_DIR, f));
-    out.push({ filename: f, size: s.size, mtime: s.mtime });
+    const fileFullPath = path.join(fullPath, f);
+    const s = await stat(fileFullPath);
+    const relative = path.relative(BASE_DIR, fileFullPath);
+    out.push({ filename: relative, size: s.size, mtime: s.mtime, isDirectory: s.isDirectory() });
   }
   return out;
 }
 
-module.exports = { write, read, remove, list, BASE_DIR };
+/**
+ * Standardized Tool Contract Interface Mapping Implementation
+ */
+async function run(step, context, interpolate) {
+  const targetFunction = (step.action || "read").toLowerCase();
+  const requestedPath = step.path || `stepName_${step.name}_TaskId_${context.taskId}.txt`;
+  const content = step.content || "";
+
+  switch (targetFunction) {
+    case "write":
+      return await write(requestedPath, content);
+    case "append":
+      return await append(requestedPath, content);
+    case "read":
+      return await read(requestedPath);
+    case "remove":
+      return await remove(requestedPath);
+    case "list":
+      return await list(requestedPath);
+    default:
+      throw new Error(`Unsupported file action matrix descriptor: [${targetFunction}]`);
+  }
+}
+
+module.exports = {
+  meta: {
+    id: "file",
+    name: "File System",
+    version: "1.0.0",
+    category: "Core",
+    description: "Read, write, append, or remove files in the workspace.",
+    fields: [
+      { name: "action", label: "Action", type: "select", options: ["read", "write", "append", "remove", "list"], default: "read", required: true },
+      { name: "path", label: "File Path", type: "text", required: true },
+      { name: "content", label: "File Content (for write/append)", type: "textarea" }
+    ]
+  },
+  write, append, read, remove, list, BASE_DIR, run
+};

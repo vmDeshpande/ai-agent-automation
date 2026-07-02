@@ -1,0 +1,5 @@
+node_modules
+frontend/.next
+frontend/out
+frontend/build
+*.min.js

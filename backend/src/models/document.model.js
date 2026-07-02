@@ -30,6 +30,32 @@ const DocumentSchema = new mongoose.Schema(
     default: "processing"
   },
 
+  processingStartedAt: {
+    type: Date
+  },
+
+  processedAt: {
+    type: Date
+  },
+
+  processingStep: {
+    type: String
+  },
+
+  processedChunks: {
+    type: Number,
+    default: 0
+  },
+
+  totalChunks: {
+    type: Number,
+    default: 0
+  },
+
+  processingError: {
+    type: String
+  },
+
   chunkCount: {
     type: Number,
     default: 0

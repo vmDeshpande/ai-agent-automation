@@ -1,638 +1,175 @@
-// backend/src/agents/executor.js
-const fs = require("fs");
-const path = require("path");
-const axios = require("axios");
-const { runLLM } = require("./llmAdapter");
-require("dotenv").config();
+require('dotenv').config();
+const { performance } = require('perf_hooks');
+const { ExecutionError, TimeoutError } = require('./utils/errors');
+const { writeLog } = require('./logger');
 
+const handlers = {
+  llm: require('./handlers/llm.handler'),
+  delay: require('./handlers/delay.handler'),
+  http: require('./handlers/http.handler'),
+  email: require('./handlers/email.handler'),
+  file: require('./handlers/file.handler'),
+  browser: require('./handlers/browser.handler'),
+  document_query: require('./handlers/document.handler'),
+  condition: require('./handlers/condition.handler'),
+  switch: require('./handlers/switch.handler'),
+  mcp: require('./handlers/mcp.handler'),
+  tool: require('./handlers/tool.handler'),
+  approval: require('./handlers/approval.handler'),
+  agent_call: require('./handlers/agentCall.handler'),
+};
 
 async function executeStep(step, context = {}, agent = null) {
-  const start = Date.now();
+  const validatedStepId = step.stepId || step.id || step.name || null;
+  const explicitTimeout = Number(step.timeoutMs ?? step.timeout);
+  const finalTimeoutMs = !isNaN(explicitTimeout) && explicitTimeout > 0 ? explicitTimeout : 30000;
 
-  try {
-    // ----- LLM -----
-    if (step.type === "llm") {
-      const prompt = interpolate(step.prompt, context);
+  const stepConfig = step.config || step; 
+  const maxRetries = Math.max(0, Number(stepConfig.maxRetries) || 0);
+  const backoffMultiplier = Math.max(1, Number(stepConfig.backoffMultiplier) || 1);
+  let currentBackoffMs = 1000; 
+  let stepAgent = agent; 
+  if (stepConfig.agentId) {
+    try {
+      const AgentModel = require('../models/agent.model'); 
+      const fetchedAgent = await AgentModel.findOne({ 
+        _id: stepConfig.agentId, 
+        userId: context.userId 
+      }).lean();
+      
+      if (fetchedAgent) {
+        stepAgent = fetchedAgent;
+      } else {
+        writeLog(`Step agent ${stepConfig.agentId} not found, falling back to global agent.`, 'warn', { taskId: context?.taskId });
+      }
+    } catch (dbErr) {
+      writeLog(`Failed to fetch step agent: ${dbErr.message}`, 'error', { taskId: context?.taskId });
+    }
+  }
 
-      let finalPrompt = prompt;
+  let lastResult = null;
+  const stepStartTimeMs = performance.now();
 
-      if (step.useMemory && agent) {
-        const { retrieveMemory } = require("../services/memoryService");
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let timeoutId = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new TimeoutError(`Step execution timed out after ${finalTimeoutMs}ms`, { configuredTimeoutMs: finalTimeoutMs }));
+      }, finalTimeoutMs);
+    });
 
-        const memories = await retrieveMemory(agent, prompt, step.memoryTopK || 5);
+    try {
+      const result = await Promise.race([
+        internalExecuteStep(step, context, stepAgent, validatedStepId, finalTimeoutMs),
+        timeoutPromise,
+      ]);
 
-        if (memories.length > 0) {
-          const MAX_MEMORY_CHARS = 4000;
+      lastResult = result;
 
-          let memoryText = memories
-            .map((m, i) => {
-              const parsed = JSON.parse(m.content);
-              return `Memory ${i + 1}:\nUser: ${parsed.user}\nAssistant: ${parsed.assistant}`;
-            })
-            .join("\n\n");
-
-          if (memoryText.length > MAX_MEMORY_CHARS) {
-            memoryText = memoryText.slice(0, MAX_MEMORY_CHARS);
-          }
-
-          finalPrompt =
-            `SYSTEM INSTRUCTION:
-You are an AI agent with persistent memory.
-The following MEMORY is factual and must be used when answering.
-
-MEMORY:
-${memoryText}
-
-USER QUESTION:
-${prompt}
-
-Use the MEMORY section to answer the question.
-
-If the answer appears in MEMORY, respond using it.
-
-If MEMORY contains the project name or related information, return it clearly.
-Do not say you lack memory.`;
-
-          console.log("Retrieved memories:", memories.length);
+      if (result.success || result.requiresApproval) {
+        if (!result.requiresApproval) {
+          result.durationMs = Math.round(performance.now() - stepStartTimeMs);
         }
+        return result;
       }
 
-      const llmRes = await runLLM(finalPrompt, {
-        provider: agent?.config?.provider,
-        model: agent?.config?.model,
-        temperature: agent?.config?.temperature,
-        ...step.options
-      });
-      const result = {
-        stepId: step.stepId || null,
-        type: "llm",
-        tool: "llm",
-        input: prompt,
-        output: llmRes.text,
-        raw: llmRes.raw,
-        success: true,
-        timestamp: new Date()
-      };
-
-      if (step.useMemory && agent && llmRes.text) {
-        const { storeMemory } = require("../services/memoryService");
-
-        await storeMemory(
-          agent,
-          JSON.stringify({
-            user: prompt,
-            assistant: llmRes.text
-          }),
-          {
-            taskId: context.taskId,
-            workflowId: context.workflow?._id,
-            type: "conversation"
+      if (attempt < maxRetries) {
+        writeLog(
+          `Step '${validatedStepId}' failed (Attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${currentBackoffMs}ms...`, 
+          'warn', 
+          { 
+            traceId: context?.traceId,
+            taskId: context?.taskId,
+            workflowId: context?.workflow?._id 
           }
+        );
+        await new Promise(res => setTimeout(res, currentBackoffMs));
+        currentBackoffMs = Math.floor(currentBackoffMs * backoffMultiplier);
+        continue;
+      }
+
+    } catch (err) {
+      let normalizedError;
+
+      if (err instanceof ExecutionError) {
+        normalizedError = err;
+      } else if (err?.message && (err.message.toLowerCase().includes('timeout') || err.message.toLowerCase().includes('timed out'))) {
+        normalizedError = new TimeoutError(err.message, { configuredTimeoutMs: finalTimeoutMs });
+      } else {
+        normalizedError = new ExecutionError(
+          err?.message || 'Unknown execution error',
+          'UNKNOWN_ERROR',
+          { rawName: err?.name }
         );
       }
 
-      return result;
-    }
+      const isTimeout = normalizedError instanceof TimeoutError;
 
-    // Delay step
-    if (step.type === "delay") {
-      const sec = Number(
-        step.seconds ?? step.delay ?? step.prompt ?? 0
-      );
-
-
-      console.log("⏳ Delay step → sleeping for", sec, "seconds");
-
-      await new Promise(resolve => setTimeout(resolve, sec * 1000));
-
-      return {
-        stepId: step.stepId,
-        type: "delay",
-        tool: "delay",
-        input: sec,
-        output: `Slept for ${sec} seconds`,
-        success: true,
-        timestamp: new Date(),
-      };
-    }
-
-
-    // ----- HTTP -----
-    if (step.type === "http") {
-      let parsedBody = null;
-
-      if (step.body) {
-        const interpolated = interpolate(step.body, context);
-        try {
-          parsedBody = JSON.parse(interpolated);
-        } catch (err) {
-          // fallback to raw string if JSON parse fails
-          parsedBody = interpolated;
-        }
-      }
-
-      const response = await axios({
-        method: (step.method || "GET").toLowerCase(),
-        url: interpolate(step.url || "", context),
-        data: parsedBody,
-        headers: step.headers || {},
-        timeout: step.timeout || 30000,
-        validateStatus: () => true,
-      });
-
-
-      return {
-        stepId: step.stepId || null,
-        type: "http",
-        tool: "http",
-        input: interpolate(step.url || "", context),
-        output: response.data,
-        success: response.status >= 200 && response.status < 300,
-        timestamp: new Date()
-      };
-    }
-
-    // ----- EMAIL -----
-    if (step.type === "email") {
-      try {
-        const nodemailer = require("nodemailer");
-
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST,
-          port: Number(process.env.EMAIL_PORT),
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
-        const to = interpolate(step.to || "", context);
-        const subject = interpolate(step.subject || "", context);
-        const text = interpolate(step.text || "", context);
-        const html = interpolate(step.html || "", context);
-
-        const info = await transporter.sendMail({
-          from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-          to,
-          subject,
-          text,
-          html,
-        });
-
-        return {
-          stepId: step.stepId,
-          type: "email",
-          tool: "email",
-          input: { to, subject, text, html },
-          output: {
-            messageId: info.messageId,
-            accepted: info.accepted,
-          },
-          success: true,
-          timestamp: new Date(),
-        };
-      } catch (err) {
-        return {
-          stepId: step.stepId,
-          type: "email",
-          tool: "email",
-          input: null,
-          output: err.message,
-          success: false,
-          timestamp: new Date(),
-        };
-      }
-    }
-
-    // ----- FILE -----
-    if (step.type === "file") {
-      const action = (step.action || "read").toLowerCase();
-
-      const resolvedPath = step.path
-        ? interpolate(step.path, context)
-        : `runtime/stepName_${step.name}_TaskId_${context.taskId}.txt`;
-
-      const outPath = path.resolve(process.cwd(), resolvedPath);
-      const dir = path.dirname(outPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-      const content = interpolate(step.content || "", context);
-
-      // WRITE
-      if (action === "write") {
-        fs.writeFileSync(outPath, content, "utf8");
-
-        return {
-          stepId: step.stepId,
-          type: "file",
-          tool: "file",
-          input: { action, path: outPath, content },
-          output: { path: outPath },
-          success: true,
-          timestamp: new Date(),
-        };
-      }
-
-      // APPEND
-      if (action === "append") {
-        fs.appendFileSync(outPath, content + "\n", "utf8");
-
-        return {
-          stepId: step.stepId,
-          type: "file",
-          tool: "file",
-          input: { action, path: outPath, content },
-          output: { path: outPath },
-          success: true,
-          timestamp: new Date(),
-        };
-      }
-
-      // READ
-      if (action === "read") {
-        if (!fs.existsSync(outPath)) {
-          return {
-            stepId: step.stepId,
-            type: "file",
-            tool: "file",
-            input: { action, path: outPath },
-            output: "File not found",
-            success: false,
-            timestamp: new Date(),
-          };
-        }
-
-        const contents = fs.readFileSync(outPath, "utf8");
-
-        return {
-          stepId: step.stepId,
-          type: "file",
-          tool: "file",
-          input: { action, path: outPath },
-          output: contents,
-          success: true,
-          timestamp: new Date(),
-        };
-      }
-
-      return {
-        stepId: step.stepId,
-        type: "file",
-        tool: "file",
-        input: { action },
-        output: `Unknown file action: ${action}`,
+      lastResult = {
+        stepId: validatedStepId,
+        type: step.type || 'unknown',
+        tool: step.tool || 'unknown',
         success: false,
         timestamp: new Date(),
+        input: isTimeout ? '[timeout]' : '[error]',
+        output: normalizedError.message,
+        error: err.stack ? String(err.stack).slice(0, 2000) : undefined,
+        errorMetadata: {
+          code: normalizedError.code,
+          name: normalizedError.name,
+          details: normalizedError.details
+        },
+        durationMs: Math.round(performance.now() - stepStartTimeMs)
       };
-    }
 
-    // ----- BROWSER -----
-    if (step.type === "browser") {
-      const puppeteer = require("puppeteer");
-      const action = (step.action || "screenshot").toLowerCase();
-      const url = interpolate(step.url || "", context);
-
-      const browser = await puppeteer.launch({
-        headless: process.env.PUPPETEER_HEADLESS !== "false",
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
-
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 800 });
-      await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-
-      if (action === "screenshot") {
-        const runtimeDir = path.resolve(process.cwd(), "runtime");
-        if (!fs.existsSync(runtimeDir))
-          fs.mkdirSync(runtimeDir, { recursive: true });
-
-        const outPath = path.join(
-          runtimeDir,
-          `screenshot_${context.taskId}_${Date.now()}.png`
+      if (attempt < maxRetries) {
+        writeLog(
+          `Step '${validatedStepId}' threw error (Attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${currentBackoffMs}ms...`, 
+          'warn', 
+          { 
+            traceId: context?.traceId,
+            taskId: context?.taskId,
+            workflowId: context?.workflow?._id 
+          }
         );
-
-        await page.screenshot({ path: outPath, fullPage: true });
-        await browser.close();
-
-        return {
-          stepId: step.stepId,
-          type: "browser",
-          tool: "browser",
-          input: { action, url },
-          output: { path: outPath },
-          success: true,
-          timestamp: new Date(),
-        };
+        await new Promise(res => setTimeout(res, currentBackoffMs));
+        currentBackoffMs = Math.floor(currentBackoffMs * backoffMultiplier);
+        continue;
       }
-
-      if (action === "evaluate") {
-        const userCode = step.code || "return document.title;";
-
-        const result = await page.evaluate((code) => {
-          try {
-            // Wrap inside function so "return" works
-            const fn = new Function(code);
-            return fn();
-          } catch (e) {
-            return { error: e.message };
-          }
-        }, userCode);
-
-        await browser.close();
-
-        return {
-          stepId: step.stepId,
-          type: "browser",
-          tool: "browser",
-          input: { action, url, code: userCode },
-          output: result,
-          success: !result?.error,
-          timestamp: new Date(),
-        };
-      }
-
-      await browser.close();
-
-      return {
-        stepId: step.stepId,
-        type: "browser",
-        tool: "browser",
-        input: { action },
-        output: `Unknown browser action: ${action}`,
-        success: false,
-        timestamp: new Date(),
-      };
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
-
-    // ----- DOCUMENT QUERY -----
-    if (step.type === "document_query") {
-
-      const { queryDocument } = require("../services/documentService");
-
-      const documentId = step.documentId;
-      const query = interpolate(step.query || "", context);
-
-      const chunks = await queryDocument(
-        agent,
-        context.userId,
-        documentId,
-        query,
-        step.topK || 3
-      );
-
-      let contextText = chunks
-        .map((c, i) => `Chunk ${i + 1}:\n${c.content}`)
-        .join("\n\n");
-
-      // prevent very large prompts
-      const MAX_CONTEXT = 3000;
-      if (contextText.length > MAX_CONTEXT) {
-        contextText = contextText.slice(0, MAX_CONTEXT);
-      }
-
-      const finalPrompt = `
-SYSTEM INSTRUCTION:
-You are answering questions using retrieved document context.
-
-Rules:
-- Only use the provided document context.
-- If the answer is not in the context, say "The document does not contain that information."
-- Do not hallucinate.
-
-DOCUMENT CONTEXT:
-${contextText}
-
-QUESTION:
-${query}
-`;
-
-      const llmRes = await runLLM(finalPrompt, {
-        provider: agent?.config?.provider,
-        model: agent?.config?.model,
-        temperature: agent?.config?.temperature
-      });
-
-      return {
-        stepId: step.stepId,
-        type: "document_query",
-        tool: "document",
-        input: query,
-        output: llmRes.text,
-        success: true,
-        timestamp: new Date()
-      };
-    }
-
-    // ----- CONDITION -----
-    if (step.type === "condition") {
-      const normalize = (val) => {
-        if (!val) return "";
-        return String(val)
-          .toLowerCase()
-          .trim()
-          .replace(/[\n\r]+/g, " ")
-          .replace(/[^\w\s]/g, "")
-          .replace(/\s+/g, " ");
-      };
-
-      const rawOutput = context.last?.output || "";
-      const text = normalize(rawOutput);
-
-      let evaluation = false;
-
-      const positiveWords = ["yes", "true", "correct", "right", "positive"];
-      const negativeWords = ["no", "false", "incorrect", "wrong", "negative"];
-
-      try {
-        // ---------- BOOLEAN ----------
-        if (step.conditionType === "boolean") {
-          const userQuery = context.results[0]?.input || "";
-          const modelAnswer = context.last?.output || "";
-
-          const prompt = `
-You are a strict boolean evaluator.
-
-Question:
-${userQuery}
-
-Answer:
-${modelAnswer}
-
-Does the answer mean TRUE or FALSE?
-
-Respond ONLY with:
-true
-or
-false
-`;
-
-          const aiResult = await runLLM(prompt, {
-            provider: agent?.config?.provider,
-            model: agent?.config?.model,
-            temperature: 0,
-          });
-
-          const cleaned = aiResult.text.toLowerCase().trim();
-
-          evaluation = cleaned.includes("true");
-        }
-
-        // ---------- SENTIMENT ----------
-        if (step.conditionType === "sentiment") {
-          let result = null;
-
-          if (text.includes("positive")) result = true;
-          else if (text.includes("negative")) result = false;
-
-          // 🔥 AI fallback
-          if (result === null) {
-            const classification = await runLLM(
-              `
-Reply ONLY "positive" or "negative".
-
-Text:
-${rawOutput}
-`,
-              {
-                provider: agent?.config?.provider,
-                model: agent?.config?.model,
-                temperature: 0,
-              }
-            );
-
-            const res = normalize(classification.text);
-
-            result = res.includes("positive");
-          }
-
-          evaluation =
-            step.operator === "isPositive"
-              ? result === true
-              : result === false;
-        }
-      } catch (err) {
-        console.log("❌ Condition error:", err);
-        evaluation = false;
-      }
-
-      return {
-        stepId: step.stepId,
-        type: "condition",
-        output: evaluation,
-        branch: evaluation ? "true" : "false",
-        success: true,
-        timestamp: new Date(),
-      };
-    }
-
-    // ----- SWITCH -----
-    if (step.type === "switch") {
-      const output = String(context.last?.output || "")
-        .toLowerCase()
-        .trim();
-
-      console.log("🔀 SWITCH INPUT:", output);
-
-      return {
-        stepId: step.stepId,
-        type: "switch",
-        tool: "switch",
-        input: output,
-        output: output,
-        caseValue: output, // 🔥 KEY FIX
-        success: true,
-        timestamp: new Date(),
-      };
-    }
-
-    // unknown step type
-    return {
-      stepId: step.stepId || null,
-      type: step.type || "unknown",
-      tool: step.tool || "unknown",
-      input: null,
-      output: `Unknown step type: ${step.type}`,
-      success: false,
-      timestamp: new Date()
-    };
-  } catch (err) {
-    // return error object (don't leak secrets)
-    return {
-      stepId: step.stepId || null,
-      type: step.type || "unknown",
-      tool: step.tool || "unknown",
-      input: "[error]",
-      output: err.message,
-      success: false,
-      error: (err && err.stack) ? String(err.stack).slice(0, 2000) : undefined,
-      timestamp: new Date()
-    };
-  } finally {
-    // you can log step duration if needed
-    // const duration = Date.now() - start;
   }
+
+  if (lastResult && !lastResult.durationMs && !lastResult.requiresApproval) {
+    lastResult.durationMs = Math.round(performance.now() - stepStartTimeMs);
+  }
+  
+  return lastResult;
 }
 
-/**
- * Basic template interpolation: {{key}} replaced by context[key]
- */
-function interpolate(template = "", context = {}) {
-  if (typeof template !== "string") return template;
-  return template.replace(/\{\{(.*?)\}\}/g, (_, key) => {
-    const k = key.trim();
-    // support nested keys like input.text
-    const parts = k.split(".");
-    let val = context;
-    for (const p of parts) {
-      if (val === undefined || val === null) break;
-      val = val[p];
-    }
-    if (val === undefined || val === null) return "";
+async function internalExecuteStep(step, context, agent, validatedStepId, timeoutMs) {
+  const stepType = String(step.type || '').toLowerCase();
+  
+  const handler = handlers[stepType];
 
-    if (typeof val === "object") {
-      return JSON.stringify(val, null, 2);
-    }
-
-    return String(val);
-  });
-}
-
-function evaluateExpression(expression, context) {
-  try {
-    const normalize = (val) => {
-      if (typeof val !== "string") return val;
-
-      return val
-        .toLowerCase()
-        .trim()
-        .replace(/[\n\r]+/g, "")
-        .replace(/[^\w]/g, "");
+  if (!handler) {
+    return {
+      stepId: validatedStepId,
+      type: stepType,
+      output: `Unknown step type: ${stepType}`,
+      success: false,
+      timestamp: new Date(),
     };
-
-    const replaced = expression.replace(/\{\{(.*?)\}\}/g, (_, key) => {
-      const path = key.trim().split(".");
-      let val = context;
-
-      for (const p of path) {
-        val = val?.[p];
-      }
-
-      val = normalize(val);
-
-      if (typeof val === "string") return `"${val}"`;
-      return val;
-    });
-
-    // ALSO normalize literals inside expression
-    const cleanedExpression = replaced.replace(/'([^']+)'/g, (_, val) => {
-      return `"${normalize(val)}"`;
-    });
-
-    return Function(`return (${cleanedExpression})`)();
-  } catch (err) {
-    console.error("Condition evaluation failed:", err.message);
-    return false;
   }
+
+  return handler.execute(
+    step,
+    context,
+    agent,
+    validatedStepId,
+    timeoutMs
+  );
 }
 
 module.exports = { executeStep };

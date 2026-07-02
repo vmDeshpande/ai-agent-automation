@@ -1,0 +1,5 @@
+# commit-msg hook — runs after the commit message is written.
+# Validates the message against conventional commit rules defined in commitlint.config.js.
+# Enforces format: <type>(<scope>): <subject>  e.g. feat(auth): add login endpoint
+# Commit is rejected if the message does not conform.
+npx --no -- commitlint --edit $1

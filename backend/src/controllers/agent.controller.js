@@ -1,4 +1,6 @@
 const Agent = require("../models/agent.model");
+const { runLLM } = require("../agents/llmAdapter");
+const { storeMemory, retrieveMemory } = require("../services/memoryService");
 
 /** Helpers */
 function sendError(res, code, msg) {
@@ -12,21 +14,22 @@ function sendOK(res, payload) {
 async function createAgent(req, res) {
   try {
     const userId = req.user._id;
-    const { name, description, type, config, capabilities, isActive, quota } = req.body;
-
+    const { name, description, role, objective, systemInstructions, avatar, type, config, capabilities, isActive, quota } = req.body;
     if (!name) return sendError(res, 400, "name_required");
-
     const agent = await Agent.create({
       name,
       description: description || "",
+      role: role || "",
+      objective: objective || "",
+      systemInstructions: systemInstructions || "",
+      avatar: avatar || "",
       userId,
       type: type || "custom",
       config: config || {},
       capabilities: capabilities || ["llm"],
       isActive: isActive === undefined ? true : !!isActive,
-      quota: quota || {}
+      quota: quota || {},
     });
-
     return sendOK(res, { agent });
   } catch (err) {
     console.error("createAgent error", err);
@@ -51,7 +54,8 @@ async function getAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
     if (!agent) return sendError(res, 404, "not_found");
-    if (agent.userId.toString() !== req.user._id.toString()) return sendError(res, 403, "forbidden");
+    if (agent.userId.toString() !== req.user._id.toString())
+      return sendError(res, 403, "forbidden");
     return sendOK(res, { agent });
   } catch (err) {
     console.error("getAgent error", err);
@@ -64,13 +68,12 @@ async function updateAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
     if (!agent) return sendError(res, 404, "not_found");
-    if (agent.userId.toString() !== req.user._id.toString()) return sendError(res, 403, "forbidden");
-
-    const allowed = ["name", "description", "type", "config", "capabilities", "isActive", "quota"];
-    allowed.forEach(k => {
+    if (agent.userId.toString() !== req.user._id.toString())
+      return sendError(res, 403, "forbidden");
+    const allowed = ["name", "description", "role", "objective", "systemInstructions", "avatar", "type", "config", "capabilities", "isActive", "quota"];
+    allowed.forEach((k) => {
       if (req.body[k] !== undefined) agent[k] = req.body[k];
     });
-
     await agent.save();
     return sendOK(res, { agent });
   } catch (err) {
@@ -84,8 +87,8 @@ async function deleteAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
     if (!agent) return sendError(res, 404, "not_found");
-    if (agent.userId.toString() !== req.user._id.toString()) return sendError(res, 403, "forbidden");
-
+    if (agent.userId.toString() !== req.user._id.toString())
+      return sendError(res, 403, "forbidden");
     await agent.deleteOne();
     return sendOK(res, { message: "agent_deleted" });
   } catch (err) {
@@ -94,10 +97,87 @@ async function deleteAgent(req, res) {
   }
 }
 
+/**
+ * Run agent in playground - POST /api/agents/:id/run
+ * Body: { prompt, useMemory }
+ * Returns: { response, retrievedMemory }
+ *
+ * Uses the same runLLM() adapter that workflow LLM steps use
+ * (backend/src/agents/llmAdapter.js) instead of calling a provider
+ * SDK directly. Supports Groq, OpenAI, Gemini, Ollama, HuggingFace.
+ */
+async function runAgent(req, res) {
+  try {
+    const agent = await Agent.findById(req.params.id);
+    if (!agent) return sendError(res, 404, "not_found");
+    if (agent.userId.toString() !== req.user._id.toString())
+      return sendError(res, 403, "forbidden");
+
+    const { prompt, useMemory = false } = req.body;
+    if (!prompt?.trim()) return sendError(res, 400, "prompt_required");
+
+    const provider = agent.config?.provider || "groq";
+    const model = agent.config?.model || "llama-3.1-8b-instant";
+    const temperature = agent.config?.temperature ?? 0.7;
+
+    // 1. Retrieve semantic memory if enabled
+    let retrievedMemory = [];
+    let systemBlock = `You are ${agent.name}.`;
+    if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
+    if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
+    if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
+    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+
+    let finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nUSER QUESTION:\n${prompt}`;
+
+    if (useMemory) {
+      retrievedMemory = await retrieveMemory(agent, prompt, 5, 0.45);
+      if (retrievedMemory.length > 0) {
+        const memoryText = retrievedMemory
+          .map((m, i) => `Memory ${i + 1}:\n${m.content}`)
+          .join("\n\n");
+
+        finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nThe following MEMORY is factual and must be used when relevant.\n\nMEMORY:\n${memoryText}\n\nUSER QUESTION:\n${prompt}`;
+      }
+    }
+
+    // 2. Run through the shared multi-provider LLM adapter
+    const llmRes = await runLLM(finalPrompt, {
+      provider,
+      model,
+      temperature,
+      maxTokens: agent.config?.maxTokens || 1024,
+    });
+
+    // 3. Store conversation in memory if enabled
+    if (useMemory && llmRes.text) {
+      await storeMemory(
+        agent,
+        JSON.stringify({ user: prompt, assistant: llmRes.text }),
+        { type: "conversation", source: "playground" }
+      );
+    }
+
+    return sendOK(res, {
+      response: llmRes.text,
+      retrievedMemory: retrievedMemory.map((m) => ({
+        content: m.content,
+        score: parseFloat(m.score.toFixed(3)),
+        createdAt: m.createdAt,
+      })),
+      meta: { provider, model, temperature },
+    });
+  } catch (err) {
+    console.error("runAgent error", err);
+    return sendError(res, 500, err.message || "server_error");
+  }
+}
+
 module.exports = {
   createAgent,
   listAgents,
   getAgent,
   updateAgent,
-  deleteAgent
+  deleteAgent,
+  runAgent,
 };

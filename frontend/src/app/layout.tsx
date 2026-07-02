@@ -9,6 +9,9 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "AI Automation Platform",
   description: "Build, run, monitor, and debug multi-step AI agent workflows",
+  icons: { 
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

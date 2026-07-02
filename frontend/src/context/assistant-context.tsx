@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { apiUrl } from "@/lib/api";
 
 /* ================= TYPES ================= */
@@ -55,7 +55,7 @@ export interface AssistantRuntimeContext {
   /* -------- Step (inside workflow) -------- */
   stepId?: string;
   stepName?: string;
-  stepType?: "LLM" | "HTTP" | "Tool" | "Delay" | "Document";
+  stepType?: string;
   stepDescription?: string;
 
   /* -------- Failed Step -------- */
@@ -166,25 +166,25 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
 
   /* ---- Message helpers ---- */
-  function addMessage(msg: AssistantMessage) {
+  const addMessage = useCallback((msg: AssistantMessage) => {
     setMessages((prev) => {
       const cleaned = prev.filter((m) => !m.loading);
       return [...cleaned, msg];
     });
-  }
+  }, []);
 
-  function clearMessages() {
+  const clearMessages = useCallback(() => {
     setMessages([]);
-  }
+  }, []);
 
   /* ---- Context helpers ---- */
-  function setContext(ctx: AssistantRuntimeContext | null) {
+  const setContext = useCallback((ctx: AssistantRuntimeContext | null) => {
     setContextState(ctx);
-  }
+  }, []);
 
-  function clearContext() {
+  const clearContext = useCallback(() => {
     setContextState(null);
-  }
+  }, []);
 
   /* ---- Sync assistant mode from settings ---- */
   useEffect(() => {
@@ -209,19 +209,20 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     syncAssistantMode();
   }, []);
 
+  /* ---- Memoize the context value to prevent unnecessary re-renders ---- */
+  const contextValue = useMemo(() => ({
+    mode,
+    setMode,
+    context,
+    setContext,
+    clearContext,
+    messages,
+    addMessage,
+    clearMessages,
+  }), [mode, context, messages, setContext, clearContext, addMessage, clearMessages]);
+
   return (
-    <AssistantContext.Provider
-      value={{
-        mode,
-        setMode,
-        context,
-        setContext,
-        clearContext,
-        messages,
-        addMessage,
-        clearMessages,
-      }}
-    >
+    <AssistantContext.Provider value={contextValue}>
       {children}
     </AssistantContext.Provider>
   );

@@ -7,11 +7,14 @@
   "tags": ["email", "automation"],
   "steps": [
     {
+      "stepId": "send",
       "name": "Send Email",
       "type": "email",
+      "position": { "x": 0, "y": 0 },
       "to": "test@gmail.com",
       "subject": "Testing Subject",
       "text": "This is Ai Agent Automation testing email."
     }
-  ]
+  ],
+  "edges": []
 }

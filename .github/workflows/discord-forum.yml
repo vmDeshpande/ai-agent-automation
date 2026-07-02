@@ -1,0 +1,267 @@
+name: 1-to-1 Discord Forum Issue Tracker
+
+on:
+  issues:
+    types:
+      - opened
+      - assigned
+      - unassigned
+      - labeled
+      - unlabeled
+      - closed
+      - reopened
+
+jobs:
+  sync-to-discord:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Find Existing Discord Thread
+        id: find_thread
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER=$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")
+
+          COMMENTS=$(curl -s \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments")
+
+          THREAD_ID=$(echo "$COMMENTS" | jq -r '.[].body' | grep -oP '(?<=discord-thread-id:)\d+' | head -n 1)
+
+          echo "Found thread ID: $THREAD_ID"
+
+          echo "thread_id=$THREAD_ID" >> $GITHUB_OUTPUT
+
+      - name: Sync Issue To Discord
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_FORUM_CHANNEL_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          ACTION=$(jq -r '.action' "$GITHUB_EVENT_PATH")
+          ISSUE_NUMBER=$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")
+          ISSUE_TITLE=$(jq -r '.issue.title' "$GITHUB_EVENT_PATH")
+          ISSUE_URL=$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")
+          ISSUE_BODY=$(jq -r '.issue.body // "No description provided."' "$GITHUB_EVENT_PATH")
+          ISSUE_AUTHOR=$(jq -r '.issue.user.login' "$GITHUB_EVENT_PATH")
+          ACTOR=$(jq -r '.sender.login' "$GITHUB_EVENT_PATH")
+
+          THREAD_ID="${{ steps.find_thread.outputs.thread_id }}"
+
+          ASSIGNEES=$(jq -r '.issue.assignees | map(.login) | join(", ")' "$GITHUB_EVENT_PATH")
+
+          if [ -z "$ASSIGNEES" ] || [ "$ASSIGNEES" = "null" ]; then
+            ASSIGNEES="None"
+          fi
+
+          LABELS=$(jq -r '.issue.labels | map(.name) | join(", ")' "$GITHUB_EVENT_PATH")
+
+          if [ -z "$LABELS" ] || [ "$LABELS" = "null" ]; then
+            LABELS="None"
+          fi
+
+          if [ "$ACTION" = "opened" ]; then
+            STATUS_ALERT="🆕 New Issue Opened"
+            EMBED_COLOR=5763719
+
+          elif [ "$ACTION" = "assigned" ]; then
+            STATUS_ALERT="👤 Assignee Added"
+            EMBED_COLOR=10181046
+
+          elif [ "$ACTION" = "unassigned" ]; then
+            STATUS_ALERT="👤 Assignee Removed"
+            EMBED_COLOR=15105570
+
+          elif [ "$ACTION" = "labeled" ]; then
+            STATUS_ALERT="🏷️ Label Added"
+            EMBED_COLOR=15105570
+
+          elif [ "$ACTION" = "unlabeled" ]; then
+            STATUS_ALERT="🏷️ Label Removed"
+            EMBED_COLOR=15158332
+
+          elif [ "$ACTION" = "closed" ]; then
+            STATUS_ALERT="✅ Issue Closed"
+            EMBED_COLOR=15548997
+
+          elif [ "$ACTION" = "reopened" ]; then
+            STATUS_ALERT="🔄 Issue Reopened"
+            EMBED_COLOR=15844367
+
+          else
+            STATUS_ALERT="ℹ️ Issue Updated"
+            EMBED_COLOR=3447003
+          fi
+
+          echo "Using thread ID: $THREAD_ID"
+
+          # ==================================================
+          # CREATE THREAD
+          # ==================================================
+
+          if [ -z "$THREAD_ID" ]; then
+
+            echo "No existing Discord thread found"
+            echo "Creating new forum thread"
+
+            CREATE_PAYLOAD=$(jq -n \
+              --arg name "$ISSUE_TITLE (#$ISSUE_NUMBER)" \
+              --arg status "$STATUS_ALERT" \
+              --arg issue_title "$ISSUE_TITLE" \
+              --arg issue_url "$ISSUE_URL" \
+              --arg author "$ISSUE_AUTHOR" \
+              --arg assignees "$ASSIGNEES" \
+              --arg labels "$LABELS" \
+              --arg body "Cannot show whole description!" \
+              --arg updated_by "$ACTOR" \
+              --argjson color "$EMBED_COLOR" \
+              '{
+                name: $name,
+                message: {
+                  embeds: [
+                    {
+                      title: $issue_title,
+                      url: $issue_url,
+                      description: $status,
+                      color: $color,
+                      fields: [
+                        {
+                          name: "Author",
+                          value: $author,
+                          inline: true
+                        },
+                        {
+                          name: "Assignees",
+                          value: $assignees,
+                          inline: true
+                        },
+                        {
+                          name: "Labels",
+                          value: $labels,
+                          inline: false
+                        },
+                        {
+                          name: "Initial Description",
+                          value: $body,
+                          inline: false
+                        }
+                      ],
+                      footer: {
+                        text: ("Updated by " + $updated_by)
+                      }
+                    }
+                  ]
+                }
+              }')
+
+            RESPONSE=$(curl -s -X POST \
+              "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/threads" \
+              -H "Authorization: Bot $DISCORD_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$CREATE_PAYLOAD")
+
+            echo "$RESPONSE"
+
+            NEW_THREAD_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+            if [ "$NEW_THREAD_ID" != "null" ] && [ -n "$NEW_THREAD_ID" ]; then
+
+              echo "Discord thread created: $NEW_THREAD_ID"
+
+              DISCORD_THREAD_LINK="https://discord.com/channels/@me/$NEW_THREAD_ID"
+
+              COMMENT_PAYLOAD=$(jq -n \
+                --arg body "🔗 Discord thread synced
+
+                $DISCORD_THREAD_LINK
+
+                <!-- discord-thread-id:$NEW_THREAD_ID -->" \
+                '{body: $body}')
+
+              curl -s -X POST \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Content-Type: application/json" \
+                "https://api.github.com/repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments" \
+                -d "$COMMENT_PAYLOAD"
+
+              echo "Saved Discord thread ID to GitHub issue"
+
+            else
+              echo "Failed to create Discord thread"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+          else
+
+            echo "Existing thread found"
+            echo "Posting update to Discord thread"
+
+            # Unarchive thread if archived
+            curl -s -X PATCH \
+              "https://discord.com/api/v10/channels/$THREAD_ID" \
+              -H "Authorization: Bot $DISCORD_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"archived": false}' > /dev/null
+
+            UPDATE_PAYLOAD=$(jq -n \
+              --arg title "Issue #$ISSUE_NUMBER Updated" \
+              --arg description "$STATUS_ALERT" \
+              --arg issue_url "$ISSUE_URL" \
+              --arg issue_title "$ISSUE_TITLE" \
+              --arg author "$ISSUE_AUTHOR" \
+              --arg assignees "$ASSIGNEES" \
+              --arg labels "$LABELS" \
+              --arg updated_by "$ACTOR" \
+              --argjson color "$EMBED_COLOR" \
+              '{
+                embeds: [
+                  {
+                    title: $title,
+                    url: $issue_url,
+                    description: $description,
+                    color: $color,
+                    fields: [
+                      {
+                        name: "Title",
+                        value: $issue_title,
+                        inline: false
+                      },
+                      {
+                        name: "Author",
+                        value: $author,
+                        inline: true
+                      },
+                      {
+                        name: "Assignees",
+                        value: $assignees,
+                        inline: true
+                      },
+                      {
+                        name: "Labels",
+                        value: $labels,
+                        inline: false
+                      }
+                    ],
+                    footer: {
+                      text: ("Updated by " + $updated_by)
+                    }
+                  }
+                ]
+              }')
+
+            curl -s -X POST \
+              "https://discord.com/api/v10/channels/$THREAD_ID/messages" \
+              -H "Authorization: Bot $DISCORD_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$UPDATE_PAYLOAD"
+
+            echo "Discord thread updated successfully"
+
+          fi

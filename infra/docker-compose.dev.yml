@@ -1,0 +1,26 @@
+services:
+  backend:
+    environment:
+      NODE_ENV: development
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ../backend:/app/backend
+      - /app/backend/node_modules
+
+  worker:
+    environment:
+      NODE_ENV: development
+    command: ["npm", "run", "worker"]
+    volumes:
+      - ../backend:/app/backend
+      - /app/backend/node_modules
+
+  frontend:
+    command: ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - /app/.next

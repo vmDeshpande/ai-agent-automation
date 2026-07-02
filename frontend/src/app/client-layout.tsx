@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { SettingsProvider, useSettings } from "@/context/SettingsContext";
 
-const PUBLIC_ROUTES = ["/login", "/register"];
+const PUBLIC_ROUTES = ["/login", "/register", "/privacy"];
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
   const { settings, loading } = useSettings();

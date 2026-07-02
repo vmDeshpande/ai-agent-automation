@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { AuthGuard } from "@/components/auth/auth-guard";
-import { Activity, Workflow, ListChecks, Bot, Calendar } from "lucide-react";
+import { Activity, Workflow, ListChecks, Bot, Calendar, Copy, Loader2 } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
+import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/hooks/useApi";
+import { apiUrl } from "@/lib/api";
 
 /* -----------------------------
    Types
@@ -67,19 +71,33 @@ function ActivitySkeleton() {
 ------------------------------ */
 
 function DashboardPageInner() {
+  const router = useRouter();
+  const { addToast } = useToast();
   const { setContext, clearContext } = useAssistantContext();
-  const [now] = useState(() => Date.now());
+  
+  // Hydration safety fixes restored
+  const [now, setNow] = useState<number | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [cloningId, setCloningId] = useState<string | null>(null);
 
-  const { data: stats, loading: statsLoading } =
-    useApi<DashboardStats>("/dashboard/stats");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsMounted(true);
+      setNow(Date.now());
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
-  const { data: tasks, loading: tasksLoading } =
-  useApi<Task[]>("/tasks");
+  const { data: stats, loading: statsLoading } = useApi<DashboardStats>("/dashboard/stats");
+  const { data: tasks, loading: tasksLoading } = useApi<Task[]>("/tasks");
+  const { data: workflowsResponse, loading: workflowsLoading } = useApi<any>("/workflows");
 
-  const recentTasks = tasks?.slice(0, 8) ?? [];
-  console.log("statsLoading: ", statsLoading);
-  console.log("stats: ", stats);
-  console.log("tasksData: ", recentTasks);
+  // Safely extract arrays from backend payload
+  const workflowsArray = Array.isArray(workflowsResponse) 
+    ? workflowsResponse 
+    : (workflowsResponse?.data || workflowsResponse?.workflows || []);
+
+  const recentTasks = useMemo(() => tasks?.slice(0, 8) ?? [], [tasks]);
 
   /* -----------------------------
      Assistant context
@@ -98,12 +116,13 @@ function DashboardPageInner() {
     });
 
     return () => clearContext();
-  }, [stats, recentTasks.length, statsLoading]);
+  }, [stats, recentTasks, statsLoading, setContext, clearContext]);
 
   /* -----------------------------
      Helpers
   ------------------------------ */
-  function timeAgo(dateString: string) {
+  const timeAgo = useCallback((dateString: string) => {
+    if (!now) return "";
     const diff = now - new Date(dateString).getTime();
     const minutes = Math.floor(diff / 60000);
 
@@ -115,9 +134,9 @@ function DashboardPageInner() {
 
     const days = Math.floor(hours / 24);
     return `${days} day${days > 1 ? "s" : ""} ago`;
-  }
+  }, [now]);
 
-  function getStatusColor(status: Task["status"]) {
+  const getStatusColor = useCallback((status: Task["status"]) => {
     switch (status) {
       case "completed":
         return "bg-success/20 text-success border-success/30";
@@ -128,30 +147,72 @@ function DashboardPageInner() {
       default:
         return "bg-muted text-muted-foreground";
     }
-  }
+  }, []);
 
-  const statsUI = [
+  const handleCloneWorkflow = async (workflowId: string) => {
+    try {
+      setCloningId(workflowId);
+      
+      const token = localStorage.getItem("token");
+      
+      const response = await fetch(apiUrl(`/workflows/${workflowId}/clone`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to clone workflow");
+      }
+
+      const data = await response.json();
+
+      addToast({
+        type: "success",
+        title: "Workflow Duplicated",
+        description: "Successfully cloned the workflow.",
+      });
+
+      if (data.workflow?._id) {
+        router.push(`/workflows/${data.workflow._id}/builder`);
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error(err);
+      addToast({
+        type: "error",
+        title: "Error",
+        description: "Failed to duplicate the workflow.",
+      });
+    } finally {
+      setCloningId(null);
+    }
+  };
+
+  const statsUI = useMemo(() => [
     { label: "Total Workflows", value: stats?.workflows ?? 0, icon: Workflow },
     { label: "Total Tasks", value: stats?.tasks ?? 0, icon: ListChecks },
     { label: "Running Tasks", value: stats?.runningTasks ?? 0, icon: Activity },
     { label: "Active Agents", value: stats?.agents ?? 0, icon: Bot },
     { label: "Schedules", value: stats?.schedules ?? 0, icon: Calendar },
-  ];
+  ], [stats]);
 
   /* -----------------------------
      UI
   ------------------------------ */
+  if (!isMounted) return null;
+
   return (
     <div className="flex min-h-screen">
       <AppSidebar />
 
-      <main
-        className="flex-1 transition-[padding] duration-300"
-        style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
-      >
-        <div className="p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold">Dashboard</h1>
+      <main className="flex-1 transition-[padding] duration-300 md:pl-(--sidebar-width,256px)">
+        <div className="p-4 md:p-8 pt-16 md:pt-8">
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
             <p className="mt-2 text-muted-foreground">
               Overview of your AI automation workflows
             </p>
@@ -177,46 +238,97 @@ function DashboardPageInner() {
                   ))}
             </div>
 
-            {/* Recent Activity */}
-            <Card className="p-6">
-              <h2 className="mb-4 text-xl font-semibold">Recent Activity</h2>
+            {/* Split Grid Layout */}
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
-              <div className="space-y-3">
-                {tasksLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <ActivitySkeleton key={i} />
-                  ))
-                ) : recentTasks.length > 0 ? (
-                  recentTasks.map((task) => (
-                    <div
-                      key={task._id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-accent/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <Badge className={getStatusColor(task.status)}>
-                          {task.status}
-                        </Badge>
+              {/* Left Side: Workflows */}
+              <div className="lg:col-span-2">
+                <Card className="p-6">
+                  <h2 className="mb-4 text-xl font-semibold">Your Workflows</h2>
+                    {workflowsLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <ActivitySkeleton key={i} />
+                    ))
+                  ) : workflowsArray.length === 0 ? (
+                    <p className="text-sm text-muted-foreground opacity-70">No workflows yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {workflowsArray.slice(0, 5).map((wf: any) => (
+                        <div key={wf._id} className="group flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-accent/50 transition-colors">
+                          
+                          <div className="flex items-center gap-3">
+                            <p className="font-medium">{wf.name}</p>
+                            <Badge className={wf.status === "running" ? "bg-success/20 text-success border-success/30" : "bg-muted text-muted-foreground"}>
+                              {wf.status}
+                            </Badge>
+                          </div>
 
-                        <div>
-                          <p className="font-medium">{task.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {task.metadata?.runningBy ?? "Unknown Agent"}
-                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCloneWorkflow(wf._id)}
+                            disabled={cloningId === wf._id}
+                            title="Duplicate Workflow"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            {cloningId === wf._id ? (
+                              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            ) : (
+                              <Copy className="size-4 text-muted-foreground" />
+                            )}
+                          </Button>
+
                         </div>
-                      </div>
-
-                      <span className="text-sm text-muted-foreground">
-                        {timeAgo(task.startedAt)}
-                      </span>
+                      ))}
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground opacity-70">
-                    No recent activity
-                  </p>
-                )}
+                  )}
+                </Card>
               </div>
-            </Card>
+
+              {/* Right Side: Recent Activity */}
+              <div className="lg:col-span-1">
+                <Card className="p-6">
+                  <h2 className="mb-4 text-xl font-semibold">Recent Activity</h2>
+
+                  <div className="space-y-3">
+                    {tasksLoading ? (
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <ActivitySkeleton key={i} />
+                      ))
+                    ) : recentTasks.length > 0 ? (
+                      recentTasks.map((task) => (
+                        <div
+                          key={task._id}
+                          className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-accent/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <Badge className={getStatusColor(task.status)}>
+                              {task.status}
+                            </Badge>
+
+                            <div>
+                              <p className="font-medium">{task.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {task.metadata?.runningBy ?? "Unknown Agent"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span className="text-sm text-muted-foreground">
+                            {timeAgo(task.startedAt)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground opacity-70">
+                        No recent activity
+                      </p>
+                    )}
+                  </div>
+                </Card>
+              </div>
+              
+            </div>
           </>
         </div>
       </main>

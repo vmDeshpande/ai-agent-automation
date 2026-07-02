@@ -9,6 +9,7 @@
   ],
   "steps": [
     {
+      "stepId": "first",
       "name": "First",
       "position": {
         "x": -80,
@@ -20,6 +21,7 @@
       "memoryTopK": 5
     },
     {
+      "stepId": "condition",
       "name": "Condition",
       "position": {
         "x": -80,
@@ -31,6 +33,7 @@
       "value": ""
     },
     {
+      "stepId": "negative",
       "name": "Negative",
       "position": {
         "x": -240,
@@ -42,6 +45,7 @@
       "content": "False bro"
     },
     {
+      "stepId": "positive",
       "name": "Positive",
       "position": {
         "x": 80,
@@ -53,7 +57,8 @@
       "content": "True bro"
     },
     {
-      "name": "New Step",
+      "stepId": "delay_neg",
+      "name": "Delay Negative",
       "position": {
         "x": -240,
         "y": 40
@@ -62,7 +67,8 @@
       "seconds": 10
     },
     {
-      "name": "New Step",
+      "stepId": "llm_neg",
+      "name": "LLM Negative",
       "position": {
         "x": -240,
         "y": 200
@@ -73,7 +79,8 @@
       "memoryTopK": 5
     },
     {
-      "name": "New Step",
+      "stepId": "delay_pos",
+      "name": "Delay Positive",
       "position": {
         "x": 80,
         "y": 40
@@ -82,6 +89,7 @@
       "seconds": 5
     },
     {
+      "stepId": "result",
       "name": "Result",
       "position": {
         "x": -80,
@@ -93,7 +101,8 @@
       "content": "{{last.output}}"
     },
     {
-      "name": "New Step",
+      "stepId": "llm_pos",
+      "name": "LLM Positive",
       "position": {
         "x": 80,
         "y": 200
@@ -102,6 +111,57 @@
       "prompt": "so earth is really flat?",
       "useMemory": false,
       "memoryTopK": 5
+    }
+  ],
+  "edges": [
+    {
+      "id": "first-to-condition",
+      "source": "first",
+      "target": "condition"
+    },
+    {
+      "id": "condition-to-neg",
+      "source": "condition",
+      "target": "negative",
+      "condition": "false",
+      "label": "false"
+    },
+    {
+      "id": "condition-to-pos",
+      "source": "condition",
+      "target": "positive",
+      "condition": "true",
+      "label": "true"
+    },
+    {
+      "id": "neg-to-delayneg",
+      "source": "negative",
+      "target": "delay_neg"
+    },
+    {
+      "id": "delayneg-to-llmneg",
+      "source": "delay_neg",
+      "target": "llm_neg"
+    },
+    {
+      "id": "llmneg-to-result",
+      "source": "llm_neg",
+      "target": "result"
+    },
+    {
+      "id": "pos-to-delaypos",
+      "source": "positive",
+      "target": "delay_pos"
+    },
+    {
+      "id": "delaypos-to-llmpos",
+      "source": "delay_pos",
+      "target": "llm_pos"
+    },
+    {
+      "id": "llmpos-to-result",
+      "source": "llm_pos",
+      "target": "result"
     }
   ]
 }

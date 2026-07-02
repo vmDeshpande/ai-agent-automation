@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Cpu, Thermometer, Zap } from "lucide-react";
 import { useAssistantContext } from "@/context/assistant-context";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogTrigger,
@@ -26,6 +27,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { apiUrl } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,6 +35,11 @@ type Agent = {
   _id: string;
   name: string;
   description?: string;
+  role?: string;
+  objective?: string;
+  systemInstructions?: string;
+  avatar?: string;
+  capabilities?: string[];
   status?: "active" | "inactive";
   workflows?: string;
   config?: {
@@ -46,6 +53,7 @@ type Agent = {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [filterCap, setFilterCap] = useState("");
   const { addToast } = useToast();
   const { setContext, clearContext } = useAssistantContext();
 
@@ -67,21 +75,25 @@ export default function AgentsPage() {
   }
 
   async function fetchAgents() {
-    try {
-      const res = await fetch(apiUrl("/agents"), {
-        headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
-        },
-      });
-
-      const data = await res.json();
-      if (data.ok) setAgents(data.agents as Agent[]);
-    } catch (err) {
-      console.error("Error fetching agents:", err);
-    } finally {
-      setLoading(false);
+  try {
+    console.log("Fetching agents...");
+    setLoading(true);
+    const res = await fetch(apiUrl("/agents"), {
+      headers: {
+        Authorization: "Bearer " + localStorage.getItem("token"),
+      },
+    });
+   
+    const data = await res.json();
+    if (data.ok) {
+      setAgents(data.agents as Agent[]);
     }
-  }
+ } catch (err) {
+  console.error("Error fetching agents:", err);
+} finally {
+  setLoading(false);
+}
+}
 
   useEffect(() => {
     fetchAgents();
@@ -144,116 +156,140 @@ export default function AgentsPage() {
                 </p>
               </div>
 
-              <CreateAgentModal onCreated={fetchAgents} />
+              <div className="flex items-center gap-4">
+                <Input 
+                  placeholder="Filter by capability (e.g. writing)" 
+                  value={filterCap}
+                  onChange={(e) => setFilterCap(e.target.value)}
+                  className="w-64"
+                />
+                <CreateAgentModal onCreated={fetchAgents} />
+              </div>
             </div>
 
             {loading ? (
-              <p className="opacity-70">Loading agents…</p>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((skeletonId) => (
+                  <Card key={skeletonId} className="p-6">
+                    <div className="mb-4 flex items-start justify-between">
+                      <Skeleton className="h-12 w-12 rounded-lg" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                    </div>
+                    <Skeleton className="h-5 w-3/4 rounded-md" />
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                      <Skeleton className="h-4 w-1/2 rounded-md" />
+                      <Skeleton className="h-4 w-2/3 rounded-md" />
+                      <Skeleton className="h-4 w-full rounded-md" />
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Skeleton className="h-9 flex-1 rounded-md" />
+                      <Skeleton className="h-9 w-9 rounded-md" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
             ) : agents.length === 0 ? (
               <p className="opacity-60">No agents created yet.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {agents.map(
-                  (agent) => (
-                    console.log(agent),
-                    (
-                      <Card
-                        key={agent._id}
-                        className="p-6"
-                        onClick={() =>
-                          setContext({
-                            page: "agents",
-                            agentId: agent._id,
-                            agentName: agent.name,
-                            model: agent.config?.model,
-                            temperature: agent.config?.temperature,
-                          })
-                        }
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {agents
+                  .filter((a) => !filterCap || a.capabilities?.some(c => c.includes(filterCap.toLowerCase().trim())))
+                  .map((agent) => (
+                  <Card
+                    key={agent._id}
+                    className="p-6"
+                    onClick={() =>
+                      setContext({
+                        page: "agents",
+                        agentId: agent._id,
+                        agentName: agent.name,
+                        model: agent.config?.model,
+                        temperature: agent.config?.temperature,
+                      })
+                    }
+                  >
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
+                        <Cpu className="size-6 text-primary" />
+                      </div>
+
+                      <Badge variant={agent.status === "active" ? "success" : "secondary"}>
+                        {agent.status ?? "idle"}
+                      </Badge>
+                    </div>
+
+                    <h3 className="text-lg font-semibold">{agent.name}</h3>
+                    {agent.role && <p className="text-sm text-muted-foreground mt-0.5">{agent.role}</p>}
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`${getProviderColor(agent.config?.provider)}`}
                       >
-                        <div className="mb-4 flex items-start justify-between">
-                          <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10">
-                            <Cpu className="size-6 text-primary" />
-                          </div>
-
-                          <Badge
-                            className={
-                              agent.status === "active"
-                                ? "bg-success/20 text-success border-success/30"
-                                : "bg-muted text-muted-foreground"
-                            }
-                          >
-                            {agent.status ?? "idle"}
-                          </Badge>
-                        </div>
-
-                        <h3 className="text-lg font-semibold">{agent.name}</h3>
-
-                        <Badge
-                          variant="outline"
-                          className={`mt-2 ${getProviderColor(agent.config?.provider)}`}
-                        >
-                          {agent.config?.provider ?? "unknown"} •{" "}
-                          {agent.config?.model ?? "default"}
+                        {agent.config?.provider ?? "unknown"} •{" "}
+                        {agent.config?.model ?? "default"}
+                      </Badge>
+                      {agent.capabilities?.filter(c => c !== 'llm').map((cap, i) => (
+                        <Badge key={i} variant="secondary" className="capitalize text-xs">
+                          {cap}
                         </Badge>
+                      ))}
+                    </div>
 
-                        <div className="mt-4 space-y-3 border-t border-border pt-4">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Model</span>
-                            <span className="font-mono text-xs">
-                              {agent.config?.model ?? "—"}
-                            </span>
-                          </div>
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Model</span>
+                        <span className="font-mono text-xs">
+                          {agent.config?.model ?? "—"}
+                        </span>
+                      </div>
 
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Thermometer className="size-4" />
-                              <span>Temperature</span>
-                            </div>
-                            <span className="font-medium">
-                              {agent.config?.temperature ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Zap className="size-4" />
-                              <span>Max Tokens</span>
-                            </div>
-                            <span className="font-medium">
-                              {agent.config?.maxTokens ?? "—"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              Used in
-                            </span>
-                            <span className="font-medium">
-                              {agent.workflows ?? "—"}
-                            </span>
-                          </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Thermometer className="size-4" />
+                          <span>Temperature</span>
                         </div>
+                        <span className="font-medium">
+                          {agent.config?.temperature ?? "—"}
+                        </span>
+                      </div>
 
-                        <div className="mt-4 flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 bg-transparent"
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive"
-                            onClick={() => deleteAgent(agent._id)}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Zap className="size-4" />
+                          <span>Max Tokens</span>
                         </div>
-                      </Card>
-                    )
-                  ),
-                )}
+                        <span className="font-medium">
+                          {agent.config?.maxTokens ?? "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Used in</span>
+                        <span className="font-medium">
+                          {agent.workflows ?? "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 bg-transparent"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => deleteAgent(agent._id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
           </div>
@@ -272,6 +308,11 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
   const [loading, setLoading] = useState(false);
 
   const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [objective, setObjective] = useState("");
+  const [description, setDescription] = useState("");
+  const [systemInstructions, setSystemInstructions] = useState("");
+  const [capabilitiesInput, setCapabilitiesInput] = useState("");
   const [type, setType] = useState<"llm" | "tool">("llm");
 
   const [providers, setProviders] = useState<any>(null);
@@ -322,9 +363,19 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
 
     try {
       setLoading(true);
+      const caps = capabilitiesInput
+        .split(",")
+        .map((c) => c.trim().toLowerCase())
+        .filter(Boolean);
+      if (!caps.includes("llm")) caps.unshift("llm");
 
       const body = {
         name,
+        role,
+        objective,
+        description,
+        systemInstructions,
+        capabilities: caps,
         config: {
           provider,
           model,
@@ -346,6 +397,11 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
 
       setOpen(false);
       setName("");
+      setRole("");
+      setObjective("");
+      setDescription("");
+      setSystemInstructions("");
+      setCapabilitiesInput("");
       setProvider("");
       setModel("");
       setTemperature(0.7);
@@ -391,7 +447,63 @@ export function CreateAgentModal({ onCreated }: CreateAgentModalProps) {
             <Input
               className="mt-1.5"
               value={name}
+              placeholder="e.g. CodeX, DataBot"
               onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          {/* Role & Capabilities */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Role Specialization</Label>
+              <Input
+                className="mt-1.5"
+                placeholder="e.g. Research Agent"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Capabilities (comma separated)</Label>
+              <Input
+                className="mt-1.5"
+                placeholder="e.g. writing, coding, analysis"
+                value={capabilitiesInput}
+                onChange={(e) => setCapabilitiesInput(e.target.value)}
+              />
+            </div>
+          </div>
+
+        {/* Objective */}
+          <div>
+            <Label>Agent Objective</Label>
+            <Input
+              className="mt-1.5"
+              placeholder="What is this agent's primary goal?"
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <Label>Description</Label>
+            <Input
+              className="mt-1.5"
+              placeholder="Brief summary of the agent's purpose"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          {/* System Instructions */}
+          <div>
+            <Label>Persistent System Instructions</Label>
+            <Textarea
+              className="mt-1.5 resize-none h-20"
+              placeholder="Define personality, rules, output format, or constraints..."
+              value={systemInstructions}
+              onChange={(e) => setSystemInstructions(e.target.value)}
             />
           </div>
 

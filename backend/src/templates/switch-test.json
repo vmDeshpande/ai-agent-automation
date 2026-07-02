@@ -9,6 +9,7 @@
   ],
   "steps": [
     {
+      "stepId": "generate",
       "name": "Generate Type",
       "position": {
         "x": 340,
@@ -20,6 +21,7 @@
       "memoryTopK": 5
     },
     {
+      "stepId": "route",
       "name": "Route",
       "position": {
         "x": 340,
@@ -28,6 +30,7 @@
       "type": "switch"
     },
     {
+      "stepId": "email",
       "name": "Email Step",
       "position": {
         "x": 60,
@@ -40,6 +43,7 @@
       "html": ""
     },
     {
+      "stepId": "file",
       "name": "File Step",
       "position": {
         "x": 220,
@@ -51,6 +55,7 @@
       "content": "Switch Case working"
     },
     {
+      "stepId": "browser",
       "name": "Browser",
       "position": {
         "x": 640,
@@ -62,6 +67,7 @@
       "code": ""
     },
     {
+      "stepId": "fallback",
       "name": "Fallback",
       "position": {
         "x": 480,
@@ -71,6 +77,41 @@
       "action": "write",
       "path": "runtime/fallback.txt",
       "content": "This is fallback"
+    }
+  ],
+  "edges": [
+    {
+      "id": "generate-to-route",
+      "source": "generate",
+      "target": "route"
+    },
+    {
+      "id": "route-to-email",
+      "source": "route",
+      "target": "email",
+      "caseValue": "email",
+      "label": "email"
+    },
+    {
+      "id": "route-to-file",
+      "source": "route",
+      "target": "file",
+      "caseValue": "file",
+      "label": "file"
+    },
+    {
+      "id": "route-to-browser",
+      "source": "route",
+      "target": "browser",
+      "caseValue": "browser",
+      "label": "browser"
+    },
+    {
+      "id": "route-to-fallback",
+      "source": "route",
+      "target": "fallback",
+      "caseValue": "default",
+      "label": "default"
     }
   ]
 }

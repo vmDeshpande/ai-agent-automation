@@ -7,8 +7,37 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 
 async function runLLM(prompt, opts = {}) {
-  const provider = opts.provider || "groq";
-  const model = opts.model;
+  let provider = opts.provider;
+  let model = opts.model;
+
+  if (!provider || !model) {
+    let fallbackProvider = "groq";
+    let fallbackModel = "llama-3.1-8b-instant";
+
+    if (process.env.GROQ_API_KEY) {
+      fallbackProvider = "groq";
+      fallbackModel = "llama-3.1-8b-instant";
+    } else if (process.env.OPENAI_API_KEY) {
+      fallbackProvider = "openai";
+      fallbackModel = "gpt-4o-mini";
+    } else if (process.env.GEMINI_API_KEY) {
+      fallbackProvider = "gemini";
+      fallbackModel = "gemini-1.5-flash";
+    } else if (process.env.OLLAMA_HOST) {
+      fallbackProvider = "ollama";
+      fallbackModel = "llama3";
+    } else if (process.env.HF_API_KEY) {
+      fallbackProvider = "huggingface";
+      fallbackModel = "mistralai/Mistral-7B-Instruct-v0.2";
+    } else {
+      fallbackProvider = "ollama";
+      fallbackModel = "llama3";
+    }
+
+    if (!provider) provider = fallbackProvider;
+    if (!model) model = fallbackModel;
+  }
+
   const temperature = opts.temperature ?? 0.2;
   const maxTokens = opts.maxTokens || 256;
 
