@@ -4,6 +4,7 @@ import type { Connection, Node, NodeDragHandler, Edge, NodeChange, EdgeChange } 
 import ReactFlow, {
   Controls,
   Background,
+  MiniMap,
   addEdge,
   useNodesState,
   applyNodeChanges,
@@ -14,12 +15,13 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { apiUrl } from '@/lib/api';
 import { generateNodeId, generateEdgeId } from '@/utils/ids';
 import { duplicateNodesSafely } from '@/utils/graphValidation';
-import { X, AlertTriangle, RefreshCw, Bot } from 'lucide-react';
-import { getAgents } from '@/lib/api';
-import type { WorkflowAgent } from '@/types/workflow';
+import { X, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import ReplayDialog from './replay-dialog';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
+import { BuilderToolbar } from './builder/BuilderToolbar';
+import { InspectorPanel } from './builder/InspectorPanel';
+import { PremiumNode } from './builder/PremiumNode';
 import type {
   StepType,
   ToolType,
@@ -35,12 +37,17 @@ type StepNode = {
   type: string;
   position: { x: number; y: number };
   data: {
-    label: React.ReactElement;
+    id: string;
+    label: string;
+    type: string;
+    hasError?: boolean;
+    nodeDef?: NodeDefinition;
+    step?: WorkflowNode;
   };
   style?: React.CSSProperties;
 };
 
-const EDGE_STYLE = { strokeWidth: 2 };
+const EDGE_STYLE = { strokeWidth: 2, stroke: '#94a3b8', strokeDasharray: '5,5' };
 
 /* ---------- NODE COLORS ---------- */
 
@@ -64,225 +71,60 @@ function getNodeColor(type: string) {
       return '#8b5cf6'; // violet
     case 'Approval':
       return '#ef4444'; // red
-    case 'agent_call':
-      return '#f43f5e'; // rose
     default:
       return '#374151';
   }
 }
 
-function buildNodePreview(
-  step: WorkflowNode | undefined,
-  edges: WorkflowEdge[],
-  allSteps: WorkflowNode[],
-  nodeDefinitions?: NodeDefinition[]
-) {
-  const rows: { name: string; type: string }[] = [];
-
-  if (!step) return rows;
-
-  // Dynamic fields preview based on schema definitions
-  const nodeDef = nodeDefinitions?.find((d) => d.id === step.type);
-  if (nodeDef) {
-    nodeDef.fields.forEach((f) => {
-      const val = step.config?.[f.name] ?? step[f.name];
-      if (val !== undefined && val !== '') {
-        rows.push({
-          name: f.label || f.name,
-          type: typeof val === 'object' ? 'object' : String(val),
-        });
-      }
-    });
-  }
-
-  if (step.type === 'LLM' && !nodeDef) {
-    rows.push({ name: 'prompt', type: 'string' });
-
-    if (step.useMemory) {
-      rows.push({ name: 'memory', type: 'agent' });
-      rows.push({ name: 'memoryTopK', type: 'number' });
-    }
-
-    rows.push({ name: 'output', type: 'text' });
-  }
-
-  if (step.type === 'HTTP' && !nodeDef) {
-    rows.push({ name: 'url', type: 'string' });
-    rows.push({ name: 'method', type: 'string' });
-    rows.push({ name: 'response', type: 'json' });
-  }
-
-  if (step.type === 'Delay' && !nodeDef) {
-    rows.push({ name: 'seconds', type: 'number' });
-  }
-
-  if (step.type === 'Tool' && !nodeDef) {
-    rows.push({ name: 'tool', type: 'string' });
-  }
-
-  if (step.type === 'MCP' && !nodeDef) {
-    rows.push({ name: 'server', type: step.serverId || 'unset' });
-    rows.push({ name: 'tool', type: step.toolName || 'unset' });
-  }
-
-  if (step.type === 'Document' && !nodeDef) {
-    rows.push({ name: 'query', type: 'string' });
-    rows.push({ name: 'topK', type: 'number' });
-  }
-
-  if (step.type === 'Condition') {
-    const trueEdge = edges.find((e) => e.source === step.id && e.condition === 'true');
-    const falseEdge = edges.find((e) => e.source === step.id && e.condition === 'false');
-
-    const trueStep = allSteps.find((s) => s.id === trueEdge?.target);
-    const falseStep = allSteps.find((s) => s.id === falseEdge?.target);
-
-    rows.push({ name: 'true ->', type: trueStep?.name || '?' });
-    rows.push({ name: 'false ->', type: falseStep?.name || '?' });
-  }
-
-  if (step.type === 'Switch') {
-    const outgoing = edges.filter((e) => e.source === step.id);
-    outgoing.forEach((edge) => {
-      const targetStep = allSteps.find((s) => s.id === edge.target);
-      rows.push({
-        name: edge.caseValue || 'case',
-        type: targetStep?.name || '?',
-      });
-    });
-  }
-
-  if (step.type === 'Parallel') {
-    rows.push({ name: 'strategy', type: step.failureStrategy || 'fail-fast' });
-    const outEdges = edges.filter((e) => e.source === step.id);
-    rows.push({ name: 'branches', type: `${outEdges.length}` });
-  }
-
-  if (step.type === 'Join') {
-    const inEdges = edges.filter((e) => e.target === step.id);
-    rows.push({ name: 'merging', type: `${inEdges.length} sources` });
-    rows.push({ name: 'output', type: '{{parallel.results}}' });
-  }
-
-  if (step.type === 'Approval') {
-    rows.push({ name: 'message', type: 'string' });
-  }
-
-  if (step.type === 'agent_call' && !nodeDef) {
-    rows.push({ name: 'agentId', type: step.agentId ? 'Assigned' : 'Unset' });
-    rows.push({ name: 'waitForResponse', type: step.waitForResponse !== false ? 'true' : 'false' });
-  }
-
-  return rows;
-}
+const nodeTypes = {
+  premium: PremiumNode,
+};
 
 function computeNodes(
   steps: WorkflowNode[],
   flowEdges: WorkflowEdge[],
   invalidNodeIds: Set<string> = new Set(),
-  nodeDefinitions?: NodeDefinition[],
-  agents: WorkflowAgent[] = []
+  nodeDefinitions?: NodeDefinition[]
 ): StepNode[] {
   if (!steps?.length) return [];
 
   return steps.map((step, index) => {
-    const schema = buildNodePreview(step, flowEdges, steps, nodeDefinitions);
     const hasError = invalidNodeIds.has(step.id);
 
     return {
       id: step.id,
-      type: 'default',
+      type: 'premium',
       position: step.position || { x: index * 320, y: 120 },
       data: {
-        label: (
-          <div className="w-full text-sm">
-            <div className="flex items-center justify-between border-b pb-1 mb-2 group">
-              <span className="font-semibold truncate flex items-center gap-2">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: hasError ? '#ef4444' : getNodeColor(step.type) }}
-                />
-                {step.name || 'Untitled Step'}
-              </span>
-
-              <div className="flex items-center gap-1.5">
-                {hasError && <AlertTriangle className="size-4 text-red-500" />}
-
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const replayEvent = new CustomEvent('replay-workflow-node', {
-                      detail: { nodeId: step.id, name: step.name || 'Untitled Step' },
-                    });
-                    window.dispatchEvent(replayEvent);
-                  }}
-                  title="Replay from this node"
-                  className="text-primary hover:text-primary/80 hover:scale-110 text-xs opacity-0 group-hover:opacity-100 transition mr-0.5"
-                >
-                  <RefreshCw className="size-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const deleteEvent = new CustomEvent('delete-workflow-node', {
-                      detail: { nodeId: step.id },
-                    });
-                    window.dispatchEvent(deleteEvent);
-                  }}
-                  className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 mb-2">
-              <div className="text-xs text-muted-foreground">{step.type}</div>
-              {step.agentId && (
-                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 rounded text-[9px] font-semibold tracking-wide">
-                  <Bot className="size-2.5" />
-                  {agents.find((a) => a._id === step.agentId)?.name || 'Delegated Agent'}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              {schema.map((row) => (
-                <div
-                  key={row.name}
-                  className="flex justify-between gap-3 text-xs py-1 border-b border-muted/50 last:border-0"
-                >
-                  <span className="truncate">{row.name}</span>
-                  <span className="text-muted-foreground truncate">{row.type}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ),
-      },
-      style: {
-        padding: '12px 16px',
-        borderRadius: '12px',
-        border: `1px solid ${hasError ? '#ef4444' : getNodeColor(step.type)}`,
-        background: 'var(--card)',
-        color: 'var(--foreground)',
-        fontSize: '14px',
-        cursor: 'pointer',
-        fontWeight: 500,
-        minWidth: 240,
-        maxWidth: 240,
-        textAlign: 'center' as const,
-        boxShadow: hasError
-          ? `0 0 0 2px rgba(239,68,68,0.3), 0 2px 6px rgba(0,0,0,0.05)`
-          : `0 0 0 1px ${getNodeColor(step.type)}20, 0 2px 6px rgba(0,0,0,0.05)`,
-        touchAction: 'none',
+        id: step.id,
+        label: step.name || 'Untitled Step',
+        type: step.type,
+        hasError,
       },
     };
   });
 }
+
+const DEFAULT_EDGE_OPTIONS = {
+  type: 'smoothstep',
+  animated: true,
+  labelStyle: {
+    fill: 'var(--foreground)',
+    fontSize: 11,
+    fontWeight: 500,
+  },
+  labelBgStyle: {
+    fill: 'var(--card)',
+    fillOpacity: 0.8,
+    stroke: 'var(--border)',
+    strokeWidth: 1,
+    rx: 4,
+    ry: 4,
+  },
+  labelBgPadding: [6, 4] as [number, number],
+  labelBgBorderRadius: 4,
+  style: EDGE_STYLE,
+};
 
 export default function VisualBuilder({
   steps,
@@ -311,16 +153,67 @@ export default function VisualBuilder({
   const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
   const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
-  const [agents, setAgents] = useState<WorkflowAgent[]>([]);
-  const [flowEdges, setFlowEdges] = useState<Edge[]>(() => (edges as unknown as Edge[]) || []);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>(() => {
+    return (edges || []).map((e) => ({
+      ...e,
+      animated: true,
+      style: EDGE_STYLE,
+      label: e.label || (e.caseValue ? e.caseValue : e.condition ? e.condition.toUpperCase() : ''),
+    })) as unknown as Edge[];
+  });
+
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
   const selectedMcpTool = mcpTools.find(
     (tool) => tool.serverId === selectedStep?.serverId && tool.name === selectedStep?.toolName
   );
 
+  const lastPushedEdgesRef = useRef<WorkflowEdge[]>([]);
+
+  // Initialize lastPushedEdgesRef with initial edges
   useEffect(() => {
-    onEdgesChange(flowEdges as unknown as WorkflowEdge[]);
-  }, [flowEdges, onEdgesChange]);
+    lastPushedEdgesRef.current = edges || [];
+  }, []);
+
+  const pushEdgesToParent = useCallback(
+    (nextEdges: WorkflowEdge[]) => {
+      const serializedEdges: WorkflowEdge[] = nextEdges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        condition:
+          (e as any).condition || ((e as any).data?.condition as 'true' | 'false' | undefined),
+        caseValue: (e as any).caseValue || ((e as any).data?.caseValue as string | undefined),
+      }));
+      lastPushedEdgesRef.current = serializedEdges;
+      onEdgesChange(serializedEdges);
+    },
+    [onEdgesChange]
+  );
+
+  useEffect(() => {
+    const incoming = edges || [];
+    const lastPushed = lastPushedEdgesRef.current || [];
+
+    const isExternalChange =
+      incoming.length !== lastPushed.length ||
+      incoming.some((e, i) => {
+        const lp = lastPushed[i];
+        return !lp || lp.id !== e.id || lp.source !== e.source || lp.target !== e.target;
+      });
+
+    if (isExternalChange) {
+      const mapped = incoming.map((e) => ({
+        ...e,
+        animated: true,
+        style: EDGE_STYLE,
+        label:
+          e.label || (e.caseValue ? e.caseValue : e.condition ? e.condition.toUpperCase() : ''),
+      })) as unknown as Edge[];
+
+      setFlowEdges(mapped);
+      lastPushedEdgesRef.current = incoming;
+    }
+  }, [edges]);
 
   const deleteNode = useCallback(
     (nodeId: string) => {
@@ -332,10 +225,14 @@ export default function VisualBuilder({
         futureRef.current = [];
         return prev.filter((s) => s.id !== nodeId);
       });
-      setFlowEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      setFlowEdges((eds) => {
+        const next = eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+        setTimeout(() => pushEdgesToParent(next as unknown as WorkflowEdge[]), 0);
+        return next;
+      });
       setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
     },
-    [setSteps, flowEdges]
+    [setSteps, flowEdges, pushEdgesToParent]
   );
 
   const computedNodes = useMemo(() => {
@@ -344,10 +241,9 @@ export default function VisualBuilder({
       steps,
       flowEdges as unknown as WorkflowEdge[],
       nodesWithErrorsSet,
-      nodeDefinitions,
-      agents
+      nodeDefinitions
     );
-  }, [steps, flowEdges, invalidNodeIds, agents]);
+  }, [steps, flowEdges, invalidNodeIds]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
 
@@ -419,14 +315,18 @@ export default function VisualBuilder({
         futureRef.current = [];
         setSteps((prev) => [...prev, ...clonedSteps]);
         if (clonedEdges.length > 0) {
-          setFlowEdges((prev) => [...prev, ...clonedEdges]);
+          setFlowEdges((prev) => {
+            const next = [...prev, ...clonedEdges];
+            setTimeout(() => pushEdgesToParent(next as unknown as WorkflowEdge[]), 0);
+            return next;
+          });
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, steps, flowEdges, setSteps]);
+  }, [nodes, steps, flowEdges, setSteps, pushEdgesToParent]);
 
   /* ---------- KEYBOARD SHORTCUTS ---------- */
   useEffect(() => {
@@ -455,6 +355,7 @@ export default function VisualBuilder({
         futureRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
         setFlowEdges(snapshot.edges as unknown as Edge[]);
+        pushEdgesToParent(snapshot.edges);
         setSelectedNode(null);
         return;
       }
@@ -466,6 +367,7 @@ export default function VisualBuilder({
         historyRef.current.push({ steps, edges: flowEdges as unknown as WorkflowEdge[] });
         setSteps(snapshot.steps);
         setFlowEdges(snapshot.edges as unknown as Edge[]);
+        pushEdgesToParent(snapshot.edges);
         setSelectedNode(null);
         return;
       }
@@ -479,7 +381,7 @@ export default function VisualBuilder({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onSave, selectedNode, steps, flowEdges, deleteNode, setSteps]);
+  }, [onSave, selectedNode, steps, flowEdges, deleteNode, setSteps, pushEdgesToParent]);
 
   /* ---------- EVENTS ---------- */
 
@@ -505,9 +407,13 @@ export default function VisualBuilder({
         edges: [...flowEdges] as unknown as WorkflowEdge[],
       });
       futureRef.current = [];
-      setFlowEdges((eds) => eds.filter((edge) => !deletedEdges.some((d) => d.id === edge.id)));
+      setFlowEdges((eds) => {
+        const next = eds.filter((edge) => !deletedEdges.some((d) => d.id === edge.id));
+        setTimeout(() => pushEdgesToParent(next as unknown as WorkflowEdge[]), 0);
+        return next;
+      });
     },
-    [steps, flowEdges]
+    [steps, flowEdges, pushEdgesToParent]
   );
 
   const onNodesChange = useCallback(
@@ -538,13 +444,20 @@ export default function VisualBuilder({
     [setNodes, setSteps]
   );
 
-  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-    const hasStructuralChange = changes.some((c) => c.type !== 'select' && c.type !== 'reset');
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const hasStructuralChange = changes.some((c) => c.type !== 'select' && c.type !== 'reset');
 
-    if (!hasStructuralChange) return;
+      if (!hasStructuralChange) return;
 
-    setFlowEdges((eds) => applyEdgeChanges(changes, eds) as Edge[]);
-  }, []);
+      setFlowEdges((eds) => {
+        const next = applyEdgeChanges(changes, eds) as Edge[];
+        setTimeout(() => pushEdgesToParent(next as unknown as WorkflowEdge[]), 0);
+        return next;
+      });
+    },
+    [pushEdgesToParent]
+  );
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -622,10 +535,12 @@ export default function VisualBuilder({
           caseValue: caseValue ?? undefined,
         };
 
-        return addEdge(newEdge as unknown as Edge, filtered);
+        const next = addEdge(newEdge as unknown as Edge, filtered);
+        setTimeout(() => pushEdgesToParent(next as unknown as WorkflowEdge[]), 0);
+        return next;
       });
     },
-    [steps, flowEdges]
+    [steps, flowEdges, pushEdgesToParent]
   );
 
   const updateStep = useCallback(
@@ -642,16 +557,6 @@ export default function VisualBuilder({
 
   const updateNodeLabel = useCallback(
     (stepId: string, name: string, type: string) => {
-      const step = steps.find((s) => s.id === stepId);
-      if (!step) return;
-
-      const schema = buildNodePreview(
-        { ...step, name, type },
-        flowEdges as unknown as WorkflowEdge[],
-        steps,
-        nodeDefinitions
-      );
-
       setNodes((nds) =>
         nds.map((n) =>
           n.id === stepId
@@ -659,64 +564,15 @@ export default function VisualBuilder({
                 ...n,
                 data: {
                   ...n.data,
-                  label: (
-                    <div className="w-full text-sm">
-                      <div className="flex items-center justify-between border-b pb-1 mb-2 group">
-                        <span className="font-semibold truncate">{name}</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const replayEvent = new CustomEvent('replay-workflow-node', {
-                                detail: { nodeId: stepId, name },
-                              });
-                              window.dispatchEvent(replayEvent);
-                            }}
-                            title="Replay from this node"
-                            className="text-primary hover:text-primary/80 hover:scale-110 text-xs opacity-0 group-hover:opacity-100 transition mr-0.5"
-                          >
-                            <RefreshCw className="size-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const deleteEvent = new CustomEvent('delete-workflow-node', {
-                                detail: { nodeId: stepId },
-                              });
-                              window.dispatchEvent(deleteEvent);
-                            }}
-                            className="text-red-500 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-muted-foreground mb-2">{type}</div>
-
-                      <div className="space-y-1">
-                        {schema.map((row) => (
-                          <div
-                            key={row.name}
-                            className="flex justify-between text-xs py-1 border-b border-muted/50 last:border-0"
-                          >
-                            <span>{row.name}</span>
-                            <span className="text-muted-foreground">{row.type}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ),
+                  label: name,
+                  type: type,
                 },
               }
             : n
         )
       );
     },
-    [steps, flowEdges, setNodes, nodeDefinitions]
+    [setNodes]
   );
 
   useEffect(() => {
@@ -739,14 +595,6 @@ export default function VisualBuilder({
   }, []);
 
   useEffect(() => {
-    getAgents()
-      .then((res) => {
-        if (res.ok) setAgents(res.agents || []);
-      })
-      .catch(console.error);
-  }, []);
-
-  useEffect(() => {
     async function fetchMcpTools() {
       try {
         const res = await fetch(apiUrl('/mcp/tools'), {
@@ -766,122 +614,83 @@ export default function VisualBuilder({
     fetchMcpTools();
   }, []);
 
-  useEffect(() => {
-    setNodes((nds) => {
-      let changed = false;
-      const next = nds.map((node) => {
-        const step = steps.find((s) => s.id === node.id);
-        if (!step) return node;
-
-        const isSelected = selectedNode?.id === node.id;
-        const borderString = String(node.style?.border || '');
-        const isInvalid = borderString.includes('#ef4444') || borderString.includes('rgb(239, 68');
-
-        const baseColor = isInvalid ? '#ef4444' : getNodeColor(step.type);
-
-        const border = isSelected
-          ? `2px solid ${isInvalid ? '#dc2626' : '#3b82f6'}`
-          : `1px solid ${baseColor}`;
-
-        const boxShadow = isSelected
-          ? `0 0 0 2px ${isInvalid ? 'rgba(220,38,38,.35)' : 'rgba(59,130,246,.35)'}, 0 4px 12px rgba(0,0,0,.25)`
-          : `0 0 0 1px ${baseColor}20, 0 2px 6px rgba(0,0,0,0.05)`;
-
-        if (node.style?.border === border && node.style?.boxShadow === boxShadow) {
-          return node;
-        }
-
-        changed = true;
-        return {
-          ...node,
-          style: {
-            ...node.style,
-            border,
-            boxShadow,
-          },
-        };
-      });
-
-      return changed ? next : nds;
-    });
-  }, [selectedNode, steps, setNodes]);
-
   /* ---------- ADD NODE ---------- */
 
-  const addNode = useCallback(() => {
-    const id = generateNodeId('llm');
+  const addNode = useCallback(
+    (type: string, def?: NodeDefinition) => {
+      console.log('addNode called with type:', type);
+      const id = generateNodeId(type);
 
-    const node: StepNode = {
-      id,
-      type: 'default',
-      position: {
-        x: Math.random() * 200 + 100,
-        y: Math.random() * 200 + 100,
-      },
-      data: {
-        label: (
-          <div className="flex items-center justify-between gap-2">
-            <span>New Step</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNode(id);
-              }}
-              className="text-red-500 hover:text-red-600 text-xs"
-            >
-              ✕
-            </button>
-          </div>
-        ),
-      },
-      style: {
-        padding: '12px 16px',
-        borderRadius: '12px',
-        border: `1px solid ${getNodeColor('llm')}`,
-        background: 'var(--card)',
-        color: 'var(--foreground)',
-        fontSize: '14px',
-        fontWeight: 500,
-        minWidth: 240,
-        cursor: 'pointer',
-        maxWidth: 240,
-        textAlign: 'center' as const,
-        boxShadow: `0 0 0 1px ${getNodeColor('llm')}20, 0 2px 6px rgba(0,0,0,0.05)`,
-        touchAction: 'none',
-      },
-    };
+      const defaultConfig: Record<string, any> = {};
+      if (def) {
+        for (const field of def.fields) {
+          if (field.default !== undefined) defaultConfig[field.name] = field.default;
+        }
+      }
 
-    historyRef.current.push({
-      steps: [...steps],
-      edges: [...flowEdges] as unknown as WorkflowEdge[],
-    });
-    futureRef.current = [];
-    setNodes((n) => [...n, node]);
-    setSteps((prev) => [
-      ...prev,
-      {
+      const node: StepNode = {
         id,
-        name: 'New Step',
-        type: 'llm',
-        prompt: '',
-      },
-    ]);
-  }, [deleteNode, steps, flowEdges, setNodes, setSteps]);
+        type: 'premium',
+        position: {
+          x: Math.random() * 200 + 100,
+          y: Math.random() * 200 + 100,
+        },
+        data: {
+          id,
+          label: 'New Step',
+          type,
+        },
+      };
+
+      setSteps((prev) => [
+        ...prev,
+        {
+          id,
+          name: 'New Step',
+          type,
+          config: defaultConfig,
+          position: {
+            x: Math.random() * 200 + 100,
+            y: Math.random() * 200 + 100,
+          },
+        },
+      ]);
+    },
+    [deleteNode, steps, flowEdges, setNodes, setSteps]
+  );
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const memoizedNodeTypes = useMemo(
+    () => ({
+      premium: PremiumNode,
+    }),
+    []
+  );
+
+  useEffect(() => {
+    if (wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      console.log('VisualBuilder');
+      console.log('width:', rect.width);
+      console.log('height:', rect.height);
+      console.log('nodes:', nodes.length);
+      console.log('edges:', flowEdges.length);
+    }
+  });
 
   return (
-    <div className="h-[720px] rounded-xl border bg-gradient-to-b from-background to-muted/40 relative overflow-hidden">
-      <div className="absolute z-20 top-4 left-4">
-        <button
-          onClick={addNode}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:scale-[1.02] hover:shadow-lg transition"
-        >
-          + Add Step
-        </button>
-      </div>
+    <div
+      ref={wrapperRef}
+      className="flex flex-col flex-1 w-full h-full min-h-[600px] relative overflow-hidden bg-background"
+    >
+      <BuilderToolbar nodeDefinitions={nodeDefinitions || []} onAddNode={addNode} />
 
       <ReactFlow
+        className="flex-1"
         nodes={nodes}
         edges={flowEdges}
+        nodeTypes={memoizedNodeTypes}
         nodesDraggable={true}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
@@ -890,30 +699,69 @@ export default function VisualBuilder({
         onNodeClick={onNodeClick}
         onNodeDragStart={onNodeDragStart}
         proOptions={{ hideAttribution: true }}
-        connectionLineStyle={{ strokeWidth: 2 }}
-        defaultEdgeOptions={{
-          type: 'default',
-          animated: true,
-          labelStyle: {
-            fill: 'var(--foreground)',
-            fontSize: 12,
-            fontWeight: 500,
-          },
-          labelBgStyle: {
-            fill: 'var(--card)',
-            fillOpacity: 0.9,
-          },
-          labelBgPadding: [4, 2],
-          labelBgBorderRadius: 4,
-          style: { strokeWidth: 2 },
-        }}
         fitView
         snapToGrid
         snapGrid={[20, 20]}
+        connectionLineStyle={{ strokeWidth: 2 }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
       >
-        <Controls className="bg-card border rounded-md shadow" />
-        <Background gap={24} size={1} />
+        <Controls style={{ marginLeft: '220px' }} className="bg-card border rounded-md shadow" />
+        <Background gap={24} size={1} color="#e2e8f0" />
+        <MiniMap
+          className="bg-card border rounded-md shadow-sm overflow-hidden hidden sm:block !bottom-4 !right-4"
+          nodeColor={(node) => {
+            switch (node.type) {
+              case 'premium':
+                return '#94a3b8';
+              default:
+                return '#cbd5e1';
+            }
+          }}
+          maskColor="rgba(0, 0, 0, 0.05)"
+        />
       </ReactFlow>
+
+      {/* Keyboard Shortcuts Hint */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-card/80 backdrop-blur-sm border rounded-md shadow-sm p-3 text-xs text-muted-foreground pointer-events-none hidden md:block z-10">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">
+              ⌘/Ctrl
+            </kbd>{' '}
+            + <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">S</kbd>{' '}
+            <span>Save</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">
+              ⌘/Ctrl
+            </kbd>{' '}
+            + <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">D</kbd>{' '}
+            <span>Duplicate</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">Del</kbd>{' '}
+            <span>Delete</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">
+              ⌘/Ctrl
+            </kbd>{' '}
+            + <kbd className="bg-muted border rounded px-1.5 py-0.5 font-mono text-[10px]">Z</kbd>{' '}
+            <span>Undo</span>
+          </div>
+        </div>
+      </div>
+
+      <InspectorPanel
+        selectedNodeId={selectedNode?.id || null}
+        steps={steps}
+        edges={flowEdges as unknown as WorkflowEdge[]}
+        nodeDefinitions={nodeDefinitions || []}
+        documents={documents}
+        mcpTools={mcpTools}
+        onUpdateStep={updateStep}
+        onClose={() => setSelectedNode(null)}
+      />
 
       <ReplayDialog
         workflowId={workflowId}
@@ -922,751 +770,6 @@ export default function VisualBuilder({
         open={replayModalOpen}
         onOpenChange={setReplayModalOpen}
       />
-
-      {selectedNode && selectedStep && (
-        <div className="absolute right-0 top-0 h-full w-[380px] bg-card border-l shadow-xl z-30 flex flex-col">
-          <div className="p-4 border-b flex items-start justify-between">
-            <div>
-              <h3 className="font-semibold text-lg">Step Settings</h3>
-              <p className="text-xs text-muted-foreground">Configure workflow step</p>
-            </div>
-            <button
-              onClick={() => setSelectedNode(null)}
-              className="p-2 rounded-md hover:bg-muted transition"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            <div>
-              <label className="text-xs text-muted-foreground">Step Name</label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                value={selectedStep.name || ''}
-                onChange={(e) => {
-                  updateStep(selectedStep.id, { name: e.target.value });
-                  updateNodeLabel(selectedStep.id, e.target.value, selectedStep.type);
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-muted-foreground">Step Type</label>
-              <select
-                className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                value={selectedStep.type || ''}
-                onChange={(e) => {
-                  const type = e.target.value as StepType;
-                  updateStep(selectedStep.id, { type });
-                  updateNodeLabel(selectedStep.id, selectedStep.name, type);
-                }}
-              >
-                <option value="" disabled>
-                  Select step type
-                </option>
-                <optgroup label="Logic">
-                  <option value="LLM">LLM</option>
-                  <option value="HTTP">HTTP</option>
-                  <option value="Delay">Delay</option>
-                  <option value="Condition">Condition</option>
-                  <option value="Switch">Switch</option>
-                  <option value="Parallel">Parallel</option>
-                  <option value="Join">Join</option>
-                  <option value="Approval">Approval (HITL)</option>
-                  <option value="agent_call">Agent Task</option>
-                </optgroup>
-                <optgroup label="Integrations">
-                  <option value="Tool">Tool</option>
-                  <option value="MCP">MCP</option>
-                  <option value="Document">Document</option>
-                  <option value="GitHub">GitHub</option>
-                  <option value="Slack">Slack</option>
-                  <option value="Discord">Discord</option>
-                </optgroup>
-              </select>
-            </div>
-
-            {selectedStep.type !== 'agent_call' && (
-              <div>
-                <label className="text-xs text-muted-foreground flex items-center justify-between">
-                  <span>Step-Level Agent Override</span>
-                  <span className="text-[10px] opacity-60">Optional</span>
-                </label>
-                <select
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                  value={selectedStep.config?.agentId || selectedStep.agentId || ''}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, {
-                      agentId: e.target.value,
-                      config: { ...selectedStep.config, agentId: e.target.value },
-                    })
-                  }
-                >
-                  <option value="">Workflow Default Agent</option>
-                  {agents.map((ag) => (
-                    <option key={ag._id} value={ag._id}>
-                      Delegate to: {ag.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {selectedStep.type === 'Parallel' && (
-              <>
-                <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
-                  Connect multiple outgoing branches. Branches will execute simultaneously.
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Failure Strategy</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.failureStrategy || 'fail-fast'}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        failureStrategy: e.target.value as 'fail-fast' | 'continue-on-error',
-                      })
-                    }
-                  >
-                    <option value="fail-fast">Fail Fast (Abort all if one fails)</option>
-                    <option value="continue-on-error">Continue On Error</option>
-                  </select>
-                </div>
-              </>
-            )}
-
-            {selectedStep.type === 'Join' && (
-              <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
-                Connect multiple incoming branches to this node. It will wait for all branches to
-                finish before passing their merged payload (as an array) to the next step.
-              </div>
-            )}
-
-            {selectedStep.type === 'LLM' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Prompt</label>
-                  <textarea
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background min-h-[120px]"
-                    value={selectedStep.prompt || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { prompt: e.target.value })}
-                  />
-                </div>
-                <div className="rounded-lg border border-muted p-4">
-                  <p className="text-sm font-semibold mb-3">Advanced Options</p>
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm cursor-pointer">Use Agent Memory</label>
-                    <input
-                      type="checkbox"
-                      checked={selectedStep.useMemory ?? false}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, {
-                          useMemory: e.target.checked,
-                        })
-                      }
-                    />
-                  </div>
-                  {selectedStep.useMemory && (
-                    <div className="mt-3">
-                      <label className="text-sm">Memory Top K</label>
-                      <input
-                        type="number"
-                        className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                        value={selectedStep.memoryTopK ?? 5}
-                        onChange={(e) =>
-                          updateStep(selectedStep.id, {
-                            memoryTopK: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {selectedStep.type === 'Delay' && (
-              <div>
-                <label className="text-xs text-muted-foreground">Delay (seconds)</label>
-                <input
-                  type="number"
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                  value={selectedStep.delay || ''}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, {
-                      delay: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-            )}
-
-            {selectedStep.type === 'HTTP' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">URL</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.url || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { url: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Method</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.method || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        method: e.target.value as 'GET' | 'POST' | 'PUT' | 'DELETE',
-                      })
-                    }
-                  >
-                    <option value="" disabled>
-                      Select method
-                    </option>
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                  </select>
-                </div>
-              </>
-            )}
-
-            {selectedStep.type === 'Tool' && (
-              <div>
-                <label className="text-xs text-muted-foreground">Tool</label>
-                <select
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                  value={selectedStep.tool || ''}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, { tool: e.target.value as ToolType })
-                  }
-                >
-                  <option value="" disabled>
-                    Select tool
-                  </option>
-                  <option value="email">Email</option>
-                  <option value="file">File</option>
-                  <option value="browser">Browser</option>
-                </select>
-              </div>
-            )}
-
-            {selectedStep.type === 'MCP' && (
-              <>
-                <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
-                  External MCP tools are discovered from your configured MCP servers in Settings.
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Server</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.serverId || ''}
-                    onChange={(e) => {
-                      updateStep(selectedStep.id, {
-                        serverId: e.target.value,
-                        toolName: '',
-                      });
-                    }}
-                  >
-                    <option value="" disabled>
-                      Select server
-                    </option>
-                    {Array.from(
-                      new Map(
-                        mcpTools.map((tool) => [tool.serverId, tool.serverName || tool.serverId])
-                      ).entries()
-                    ).map(([serverId, serverName]) => (
-                      <option key={serverId} value={serverId}>
-                        {serverName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Tool</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.toolName || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { toolName: e.target.value })}
-                    disabled={!selectedStep.serverId}
-                  >
-                    <option value="" disabled>
-                      Select tool
-                    </option>
-                    {mcpTools
-                      .filter((tool) => tool.serverId === selectedStep.serverId)
-                      .map((tool) => (
-                        <option key={tool.id} value={tool.name}>
-                          {tool.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Timeout (ms)</label>
-                  <input
-                    type="number"
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.timeoutMs || 30000}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        timeoutMs: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Arguments (JSON)</label>
-                  <textarea
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background min-h-[140px] font-mono text-xs"
-                    value={selectedStep.arguments || '{\n  \n}'}
-                    onChange={(e) => updateStep(selectedStep.id, { arguments: e.target.value })}
-                  />
-                </div>
-                <div className="rounded-lg border border-muted p-3">
-                  <div className="text-xs font-medium mb-2">Tool Schema</div>
-                  <pre className="text-[11px] leading-5 whitespace-pre-wrap break-words text-muted-foreground">
-                    {selectedMcpTool
-                      ? JSON.stringify(selectedMcpTool.inputSchema, null, 2)
-                      : 'Select an MCP tool to inspect its input schema.'}
-                  </pre>
-                </div>
-              </>
-            )}
-
-            {selectedStep.type === 'Tool' && selectedStep.tool === 'email' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">To</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.to || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { to: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Subject</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.subject || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { subject: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Text</label>
-                  <textarea
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.text || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { text: e.target.value })}
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedStep.type === 'Tool' && selectedStep.tool === 'file' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Action</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.action || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { action: e.target.value })}
-                  >
-                    <option value="" disabled>
-                      Select action
-                    </option>
-                    <option value="write">Write</option>
-                    <option value="append">Append</option>
-                    <option value="read">Read</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Path</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.path || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { path: e.target.value })}
-                  />
-                </div>
-                {selectedStep.action !== 'read' && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Content</label>
-                    <textarea
-                      className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                      value={selectedStep.content || ''}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, {
-                          content: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-            {selectedStep.type === 'Tool' && selectedStep.tool === 'browser' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Action</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.action || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { action: e.target.value })}
-                  >
-                    <option value="" disabled>
-                      Select action
-                    </option>
-                    <option value="screenshot">Screenshot</option>
-                    <option value="evaluate">Evaluate</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">URL</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.url || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { url: e.target.value })}
-                  />
-                </div>
-                {selectedStep.action === 'evaluate' && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Code</label>
-                    <textarea
-                      className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                      value={selectedStep.code || ''}
-                      onChange={(e) => updateStep(selectedStep.id, { code: e.target.value })}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-            {selectedStep.type === 'Document' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Document</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.documentId || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        documentId: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="" disabled>
-                      Select document
-                    </option>
-                    {documents.map((doc) => (
-                      <option key={doc._id} value={doc._id}>
-                        {doc.title || 'Untitled Document'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Query</label>
-                  <textarea
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.query || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        query: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Top K</label>
-                  <input
-                    type="number"
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.topK || 4}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        topK: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            {/* GitHub */}
-            {selectedStep.type === 'GitHub' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Action</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.action || ''}
-                    onChange={(e) => {
-                      updateStep(selectedStep.id, { action: e.target.value });
-                    }}
-                  >
-                    <option value="" disabled>
-                      Select action
-                    </option>
-                    <option value="create_issue">Create Issue</option>
-                    <option value="get_issue">Get Issue</option>
-                    <option value="comment_issue">Comment Issue</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Owner</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.owner || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { owner: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Repo</label>
-                  <input
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.repo || ''}
-                    onChange={(e) => updateStep(selectedStep.id, { repo: e.target.value })}
-                  />
-                </div>
-                {selectedStep.action === 'create_issue' && (
-                  <>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Title</label>
-                      <input
-                        className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                        value={selectedStep.title || ''}
-                        onChange={(e) => updateStep(selectedStep.id, { title: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Body</label>
-                      <textarea
-                        className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                        value={selectedStep.body || ''}
-                        onChange={(e) => updateStep(selectedStep.id, { body: e.target.value })}
-                      />
-                    </div>
-                  </>
-                )}
-                {(selectedStep.action === 'get_issue' ||
-                  selectedStep.action === 'comment_issue') && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Issue Number</label>
-                    <input
-                      className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                      value={selectedStep.issue_number || ''}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, { issue_number: e.target.value })
-                      }
-                    />
-                  </div>
-                )}
-                {selectedStep.action === 'comment_issue' && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Comment</label>
-                    <textarea
-                      className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                      value={selectedStep.comment || ''}
-                      onChange={(e) => updateStep(selectedStep.id, { comment: e.target.value })}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Slack */}
-            {selectedStep.type === 'Slack' && (
-              <div>
-                <label className="text-xs text-muted-foreground">Message</label>
-                <textarea
-                  className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                  value={selectedStep.text || ''}
-                  onChange={(e) => updateStep(selectedStep.id, { text: e.target.value })}
-                />
-              </div>
-            )}
-
-            {/* Discord */}
-            {selectedStep.type === 'Discord' && (
-              <div>
-                <label className="text-xs text-muted-foreground">Message</label>
-                <textarea
-                  className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                  value={selectedStep.content || ''}
-                  onChange={(e) => updateStep(selectedStep.id, { content: e.target.value })}
-                />
-              </div>
-            )}
-
-            {/* CONDITION */}
-            {selectedStep.type === 'Condition' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">Condition Type</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.conditionType || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        conditionType: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Select operator</option>
-                    <option value="boolean">Boolean (Yes/No)</option>
-                    <option value="sentiment">Sentiment</option>
-                    <option value="contains">Contains Text</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Operator</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                    value={selectedStep.operator || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        operator: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Select operator</option>
-                    {selectedStep.conditionType === 'boolean' && (
-                      <>
-                        <option value="isTrue">Is True</option>
-                        <option value="isFalse">Is False</option>
-                      </>
-                    )}
-                    {selectedStep.conditionType === 'sentiment' && (
-                      <>
-                        <option value="isPositive">Positive</option>
-                        <option value="isNegative">Negative</option>
-                      </>
-                    )}
-                    {selectedStep.conditionType === 'contains' && (
-                      <>
-                        <option value="includes">Includes</option>
-                        <option value="notIncludes">Does Not Include</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-                {selectedStep.conditionType === 'contains' && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Value</label>
-                    <input
-                      className="w-full border rounded-lg px-3 py-2 mt-1 bg-background"
-                      value={selectedStep.value || ''}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, {
-                          value: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-            {selectedStep.type === 'Switch' && (
-              <>
-                <div className="text-xs text-muted-foreground">Connect edges to define cases.</div>
-                <div className="text-xs opacity-70">Each connection = one case value</div>
-              </>
-            )}
-
-            {selectedStep.type === 'Approval' && (
-              <div>
-                <label className="text-xs text-muted-foreground">Approval Message</label>
-                <textarea
-                  className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                  value={selectedStep.approvalMessage || ''}
-                  onChange={(e) => updateStep(selectedStep.id, { approvalMessage: e.target.value })}
-                  placeholder="e.g. Please approve this email before it is sent."
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Workflow execution will pause at this node until a human reviews and approves the
-                  pending task.
-                </p>
-              </div>
-            )}
-
-            {selectedStep.type === 'agent_call' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">
-                    Target Agent <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background"
-                    value={selectedStep.config?.agentId || selectedStep.agentId || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        agentId: e.target.value,
-                        config: { ...selectedStep.config, agentId: e.target.value },
-                      })
-                    }
-                  >
-                    <option value="" disabled>
-                      Select agent to delegate to...
-                    </option>
-                    {agents.map((ag) => (
-                      <option key={ag._id} value={ag._id}>
-                        {ag.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Input / Prompt</label>
-                  <textarea
-                    className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 mt-1 bg-background min-h-[120px]"
-                    value={selectedStep.config?.input || selectedStep.input || ''}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        config: { ...selectedStep.config, input: e.target.value },
-                      })
-                    }
-                    placeholder="Enter explicit instructions for the delegated agent..."
-                  />
-                </div>
-                <div className="rounded-lg border border-muted p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm cursor-pointer select-none">Wait for Response</label>
-                    <input
-                      type="checkbox"
-                      checked={selectedStep.config?.waitForResponse !== false}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, {
-                          config: { ...selectedStep.config, waitForResponse: e.target.checked },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between border-t border-muted pt-3">
-                    <label className="text-sm cursor-pointer select-none">
-                      Use Target Agent&apos;s Memory
-                    </label>
-                    <input
-                      type="checkbox"
-                      checked={selectedStep.config?.useMemory || false}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, {
-                          config: { ...selectedStep.config, useMemory: e.target.checked },
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
