@@ -1,9 +1,18 @@
 import { Card } from '@/components/ui/card';
-import { CheckCircle2, Circle, XCircle, ShieldCheck, Copy, Terminal } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  XCircle,
+  ShieldCheck,
+  Copy,
+  Terminal,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { JsonViewer } from './JsonViewer';
-import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useState } from 'react';
 
 interface StepResult {
   stepId: string;
@@ -25,9 +34,13 @@ interface StepDetailsPaneProps {
   step: StepMetadata | null;
   result: StepResult | null;
   status: string;
+  taskId?: string;
 }
 
-export function StepDetailsPane({ step, result, status }: StepDetailsPaneProps) {
+export function StepDetailsPane({ step, result, status, taskId }: StepDetailsPaneProps) {
+  const [openInput, setOpenInput] = useState(true);
+  const [openOutput, setOpenOutput] = useState(true);
+
   if (!step) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-muted-foreground bg-card border border-border shadow-sm rounded-xl p-8 text-center">
@@ -50,7 +63,7 @@ export function StepDetailsPane({ step, result, status }: StepDetailsPaneProps) 
 
   return (
     <div className="flex flex-col flex-1 w-full h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-      <div className="p-5 border-b border-border/50">
+      <div className="p-5 border-b border-border/50 shrink-0">
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold">{step.name || step.type}</h3>
@@ -98,37 +111,54 @@ export function StepDetailsPane({ step, result, status }: StepDetailsPaneProps) 
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-4 bg-muted/10">
-        <Tabs defaultValue="output" className="w-full flex-1 flex flex-col">
-          <TabsList className="w-full justify-start bg-transparent border-b rounded-none p-0 h-auto">
-            <TabsTrigger
-              value="input"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
-            >
+      <div className="flex-1 overflow-y-auto flex flex-col p-4 bg-muted/10 gap-3">
+        {/* Input */}
+        <Collapsible
+          open={openInput}
+          onOpenChange={setOpenInput}
+          className="flex flex-col border border-border/50 rounded-md bg-card overflow-hidden shrink-0"
+        >
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/20 border-b border-border/50 group">
+            <CollapsibleTrigger className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+              {openInput ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
               Input
-            </TabsTrigger>
-            <TabsTrigger
-              value="output"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2"
-            >
+            </CollapsibleTrigger>
+            <Copy className="size-3.5 text-muted-foreground cursor-pointer hover:text-foreground" />
+          </div>
+          <CollapsibleContent>
+            <div className="p-0 max-h-48 overflow-y-auto bg-[#1e1e1e]">
+              <JsonViewer data={step} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Output */}
+        <Collapsible
+          open={openOutput}
+          onOpenChange={setOpenOutput}
+          className="flex flex-col border border-border/50 rounded-md bg-card overflow-hidden shrink-0"
+        >
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/20 border-b border-border/50 group">
+            <CollapsibleTrigger className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+              {openOutput ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
               Output
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent
-            value="input"
-            className="flex-1 mt-4 overflow-hidden rounded-md border border-border/50"
-          >
-            <JsonViewer data={step} />
-          </TabsContent>
-
-          <TabsContent
-            value="output"
-            className="flex-1 mt-4 overflow-hidden rounded-md border border-border/50"
-          >
-            <JsonViewer data={result?.output || null} />
-          </TabsContent>
-        </Tabs>
+            </CollapsibleTrigger>
+            <Copy className="size-3.5 text-muted-foreground cursor-pointer hover:text-foreground" />
+          </div>
+          <CollapsibleContent>
+            <div className="p-0 max-h-48 overflow-y-auto bg-[#1e1e1e]">
+              <JsonViewer data={result?.output || null} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </div>
   );

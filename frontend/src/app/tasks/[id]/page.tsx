@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { MetricCard } from '@/components/workflow/MetricCard';
 import { ExecutionTimeline } from '@/components/workflow/ExecutionTimeline';
 import { StepDetailsPane } from '@/components/workflow/StepDetailsPane';
+import { StepLogsPane } from '@/components/workflow/StepLogsPane';
 import { JsonViewer } from '@/components/workflow/JsonViewer';
 import {
   Target,
@@ -575,7 +576,8 @@ export default function TaskDetailPage() {
               className="flex-1 min-h-0 m-0 p-0 data-[state=inactive]:hidden flex flex-col"
             >
               <div className="flex flex-col gap-6 flex-1 min-h-0">
-                <div className="w-full flex-1 flex flex-col min-h-[400px]">
+                {/* Timeline (Full width on top) */}
+                <div className="w-full flex-none min-h-[300px] h-[350px]">
                   <ExecutionTimeline
                     steps={task.metadata?.steps || []}
                     results={task.stepResults || []}
@@ -703,16 +705,23 @@ export default function TaskDetailPage() {
                   </div>
                 )}
 
-                <div className="w-full flex-1 flex flex-col min-h-[450px]">
-                  <StepDetailsPane
-                    step={
-                      task.metadata?.steps?.find(
-                        (s) => (s.stepId || (s as any).id) === selectedStepId
-                      ) || null
-                    }
-                    result={task.stepResults?.find((r) => r.stepId === selectedStepId) || null}
-                    status={task.status}
-                  />
+                {/* Step Details & Logs (Side by side below) */}
+                <div className="flex flex-row gap-6 w-full flex-1 min-h-[400px]">
+                  <div className="flex-1 min-w-[350px] flex flex-col">
+                    <StepDetailsPane
+                      step={
+                        task.metadata?.steps?.find(
+                          (s) => (s.stepId || (s as any).id) === selectedStepId
+                        ) || null
+                      }
+                      result={task.stepResults?.find((r) => r.stepId === selectedStepId) || null}
+                      status={task.status}
+                      taskId={task._id}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[350px] flex flex-col">
+                    <StepLogsPane taskId={task._id} />
+                  </div>
                 </div>
               </div>
             </TabsContent>
