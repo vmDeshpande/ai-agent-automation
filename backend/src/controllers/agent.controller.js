@@ -14,11 +14,15 @@ function sendOK(res, payload) {
 async function createAgent(req, res) {
   try {
     const userId = req.user._id;
-    const { name, description, type, config, capabilities, isActive, quota } = req.body;
+    const { name, description, role, objective, systemInstructions, avatar, type, config, capabilities, isActive, quota } = req.body;
     if (!name) return sendError(res, 400, "name_required");
     const agent = await Agent.create({
       name,
       description: description || "",
+      role: role || "",
+      objective: objective || "",
+      systemInstructions: systemInstructions || "",
+      avatar: avatar || "",
       userId,
       type: type || "custom",
       config: config || {},
@@ -66,7 +70,7 @@ async function updateAgent(req, res) {
     if (!agent) return sendError(res, 404, "not_found");
     if (agent.userId.toString() !== req.user._id.toString())
       return sendError(res, 403, "forbidden");
-    const allowed = ["name", "description", "type", "config", "capabilities", "isActive", "quota"];
+    const allowed = ["name", "description", "role", "objective", "systemInstructions", "avatar", "type", "config", "capabilities", "isActive", "quota"];
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) agent[k] = req.body[k];
     });
@@ -118,7 +122,13 @@ async function runAgent(req, res) {
 
     // 1. Retrieve semantic memory if enabled
     let retrievedMemory = [];
-    let finalPrompt = prompt;
+    let systemBlock = `You are ${agent.name}.`;
+    if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
+    if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
+    if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
+    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+
+    let finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nUSER QUESTION:\n${prompt}`;
 
     if (useMemory) {
       retrievedMemory = await retrieveMemory(agent, prompt, 5, 0.45);
@@ -127,15 +137,7 @@ async function runAgent(req, res) {
           .map((m, i) => `Memory ${i + 1}:\n${m.content}`)
           .join("\n\n");
 
-        finalPrompt = `SYSTEM INSTRUCTION:
-You are ${agent.name}. ${agent.description || ""}
-The following MEMORY is factual and must be used when relevant.
-
-MEMORY:
-${memoryText}
-
-USER QUESTION:
-${prompt}`;
+        finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nThe following MEMORY is factual and must be used when relevant.\n\nMEMORY:\n${memoryText}\n\nUSER QUESTION:\n${prompt}`;
       }
     }
 

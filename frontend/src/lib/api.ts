@@ -140,3 +140,7 @@ export function assignAgent(id: string, payload: AssignAgentPayload): Promise<Wo
 export function runWorkflow(id: string): Promise<WorkflowApiResponse> {
   return apiPost<WorkflowApiResponse>(`/workflows/${id}/run`);
 }
+
+export function getAgents(): Promise<{ ok: boolean; agents: any[] }> {
+  return apiGet<{ ok: boolean; agents: any[] }>(`/agents`);
+}

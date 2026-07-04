@@ -111,6 +111,18 @@ const coreNodes = [
     fields: [
       { name: "approvalMessage", label: "Approval Message", type: "textarea", required: true, default: "Please approve this step" }
     ]
+  },
+  {
+    id: "agent_call",
+    name: "Agent Call",
+    version: "1.0.0",
+    category: "Integration",
+    description: "Delegate execution to a specialized AI agent.",
+    fields: [
+      { name: "agentId", label: "Target Agent", type: "text", required: true },
+      { name: "input", label: "Input Payload (JSON/Text)", type: "textarea", required: true },
+      { name: "waitForResponse", label: "Wait For Response", type: "boolean", default: true }
+    ]
   }
 ];
 

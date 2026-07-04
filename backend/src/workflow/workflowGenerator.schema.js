@@ -41,12 +41,18 @@ const documentQueryConfig = z.object({
 
 const conditionConfig = z.object({
   conditionType: z.enum(['contains', 'boolean']),
+  operator: z.enum(["==", "!=", ">", "<", ">=", "<=", "contains", "startsWith"]).optional(),
   value: z.string().optional(),
 });
 
 const switchConfig = z.object({}).optional();
 
+const delayConfig = z.object({
+  seconds: z.number().min(1),
+});
+
 const stepSchema = z.discriminatedUnion('type', [
+  z.object({ stepId: z.string().min(1), name: z.string().min(1), type: z.literal('delay'), alias: z.string().optional(), config: delayConfig }),
   z.object({ stepId: z.string().min(1), name: z.string().min(1), type: z.literal('llm'), alias: z.string().optional(), config: llmConfig }),
   z.object({ stepId: z.string().min(1), name: z.string().min(1), type: z.literal('http'), alias: z.string().optional(), config: httpConfig }),
   z.object({ stepId: z.string().min(1), name: z.string().min(1), type: z.literal('file'), alias: z.string().optional(), config: fileConfig }),

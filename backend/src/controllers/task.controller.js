@@ -326,6 +326,7 @@ async function resumeTask(req, res) {
   try {
     const userId = req.user._id;
     const taskId = req.params.id;
+    const { resumeStepId } = req.body || {};
 
     const t = await Task.findById(taskId);
     if (!t) return sendError(res, 404, "not_found");
@@ -333,11 +334,62 @@ async function resumeTask(req, res) {
       return sendError(res, 403, "forbidden");
     if (t.status === "completed")
       return sendError(res, 400, "task_already_completed");
+    if (t.status === "running")
+      return sendError(res, 400, "task_currently_running");
+
+    // Perform backend integrity check comparing current node configurations
+    // against saved task snapshots for all successful steps.
+    if (t.workflowId) {
+      const workflow = await Workflow.findById(t.workflowId);
+      if (workflow) {
+        const wSteps = workflow.metadata?.steps || [];
+        const tSteps = t.steps || [];
+        const resultsList = t.stepResults || [];
+        for (const stepResult of resultsList) {
+          if (stepResult.success) {
+            const wStep = wSteps.find((s) => (s.stepId || s.id || s.name) === stepResult.stepId);
+            const tStep = tSteps.find((s) => (s.stepId || s.id || s.name) === stepResult.stepId);
+            if (!wStep) {
+              return sendError(res, 400, "workflow_mutated");
+            }
+            if (JSON.stringify(wStep.config || {}) !== JSON.stringify(tStep.config || {})) {
+              return sendError(res, 400, "workflow_mutated");
+            }
+          }
+        }
+      }
+    }
+
+    const resultsList = t.stepResults || [];
+    let keepResults = [];
+    if (resumeStepId) {
+      const idx = resultsList.findIndex((r) => r.stepId === resumeStepId);
+      if (idx !== -1) {
+        keepResults = resultsList.slice(0, idx);
+      } else {
+        keepResults = resultsList.filter((r) => r.success === true);
+      }
+    } else {
+      const idx = resultsList.findIndex((r) => r.success === false);
+      if (idx !== -1) {
+        keepResults = resultsList.slice(0, idx);
+      } else {
+        keepResults = resultsList.filter((r) => r.success === true);
+      }
+    }
 
     await Task.findByIdAndUpdate(taskId, {
       $set: {
         status: "pending",
-        startedAt: null, // Reset so worker picks it up
+        startedAt: null,
+        completedAt: null,
+        attempts: 0,
+        stepResults: keepResults,
+        pausedAtStepId: null,
+        "approval.decision": undefined,
+        "approval.decidedAt": undefined,
+        "approval.decidedBy": undefined,
+        "approval.feedback": undefined,
       },
     });
 

@@ -75,8 +75,8 @@ async function list(subDir = "") {
  */
 async function run(step, context, interpolate) {
   const targetFunction = (step.action || "read").toLowerCase();
-  const requestedPath = step.path || `stepName_${step.name}_TaskId_${context.taskId}.txt`;
-  const content = step.content || "";
+  const requestedPath = interpolate(step.path || `stepName_${step.name}_TaskId_${context.taskId}.txt`, context);
+  const content = interpolate(step.content || "", context);
 
   switch (targetFunction) {
     case "write":

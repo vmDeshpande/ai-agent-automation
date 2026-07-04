@@ -496,27 +496,40 @@ export default function WorkflowBuilderPage() {
       if (!data.ok) throw new Error(data.error || 'Generation failed');
 
       const generatedSteps = data.steps.map((s: any) => {
-        let legacyType = s.type;
+        let finalType = s.type;
+        let toolName = s.tool || '';
+
         const lowerType = String(s.type || '').toLowerCase();
-        if (lowerType === 'llm') legacyType = 'llm';
-        else if (lowerType === 'http') legacyType = 'http';
-        else if (lowerType === 'delay') legacyType = 'delay';
-        else if (lowerType === 'mcp') legacyType = 'mcp';
-        else if (lowerType === 'document_query') legacyType = 'document_query';
-        else if (lowerType === 'condition') legacyType = 'condition';
-        else if (lowerType === 'switch') legacyType = 'switch';
-        else if (lowerType === 'file' || lowerType === 'email' || lowerType === 'browser') legacyType = lowerType;
-        else {
+        if (lowerType === 'condition') finalType = 'Condition';
+        else if (lowerType === 'switch') finalType = 'Switch';
+        else if (['email', 'file', 'browser'].includes(lowerType)) {
+          finalType = 'Tool';
+          toolName = lowerType;
+        } else if (lowerType !== 'tool') {
           const matchingDef = nodeDefinitions.find((d) => d.id.toLowerCase() === lowerType);
-          if (matchingDef) legacyType = matchingDef.id;
+          if (matchingDef) finalType = matchingDef.id;
         }
+
+        const config = s.config || {};
+        const mergedConfig = { ...config };
+        
+        for (const [key, val] of Object.entries(s)) {
+          if (!['stepId', 'id', 'name', 'type', 'position', 'config'].includes(key) && val !== undefined) {
+            mergedConfig[key] = val;
+          }
+        }
+
         return {
-          id: s.stepId,
-          stepId: s.stepId,
+          ...s,
+          ...mergedConfig,
+          id: s.stepId || s.id,
+          stepId: s.stepId || s.id,
           name: s.name,
-          type: legacyType,
-          position: s.position,
-          config: s.config || {},
+          type: finalType,
+          ...(toolName ? { tool: toolName } : {}),
+          ...(mergedConfig.seconds !== undefined ? { delay: mergedConfig.seconds } : {}),
+          position: s.position || { x: Math.random() * 200 + 100, y: Math.random() * 200 + 100 },
+          config: mergedConfig,
         };
       });
 
@@ -809,7 +822,7 @@ export default function WorkflowBuilderPage() {
                           </div>
 
                           {(() => {
-                            const def = nodeDefinitions.find(d => d.id === step.type);
+                            const def = nodeDefinitions.find(d => d.id === step.type || (step.type === 'Tool' && d.id === step.tool));
                             if (!def) return null;
                             return (
                               <div className="mt-4 border-t pt-4 space-y-4">

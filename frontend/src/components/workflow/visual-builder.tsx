@@ -15,7 +15,9 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { apiUrl } from '@/lib/api';
 import { generateNodeId, generateEdgeId } from '@/utils/ids';
 import { duplicateNodesSafely } from '@/utils/graphValidation';
-import { X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { X, AlertTriangle, RefreshCw, Bot } from 'lucide-react';
+import { getAgents } from '@/lib/api';
+import type { WorkflowAgent } from '@/types/workflow';
 import { useParams } from 'next/navigation';
 import ReplayDialog from './replay-dialog';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
@@ -71,20 +73,20 @@ function getNodeColor(type: string) {
       return '#8b5cf6'; // violet
     case 'Approval':
       return '#ef4444'; // red
+    case 'agent_call':
+      return '#f43f5e'; // rose
     default:
       return '#374151';
   }
 }
 
-const nodeTypes = {
-  premium: PremiumNode,
-};
 
 function computeNodes(
   steps: WorkflowNode[],
   flowEdges: WorkflowEdge[],
   invalidNodeIds: Set<string> = new Set(),
-  nodeDefinitions?: NodeDefinition[]
+  nodeDefinitions?: NodeDefinition[],
+  agents: WorkflowAgent[] = []
 ): StepNode[] {
   if (!steps?.length) return [];
 
@@ -96,10 +98,6 @@ function computeNodes(
       type: 'premium',
       position: step.position || { x: index * 320, y: 120 },
       data: {
-        id: step.id,
-        label: step.name || 'Untitled Step',
-        type: step.type,
-        hasError,
       },
     };
   });
@@ -153,15 +151,6 @@ export default function VisualBuilder({
   const futureRef = useRef<{ steps: WorkflowNode[]; edges: WorkflowEdge[] }[]>([]);
   const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
   const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
-  const [flowEdges, setFlowEdges] = useState<Edge[]>(() => {
-    return (edges || []).map((e) => ({
-      ...e,
-      animated: true,
-      style: EDGE_STYLE,
-      label: e.label || (e.caseValue ? e.caseValue : e.condition ? e.condition.toUpperCase() : ''),
-    })) as unknown as Edge[];
-  });
-
   const selectedStep = steps.find((s) => s.id === selectedNode?.id);
   const selectedMcpTool = mcpTools.find(
     (tool) => tool.serverId === selectedStep?.serverId && tool.name === selectedStep?.toolName
@@ -241,9 +230,10 @@ export default function VisualBuilder({
       steps,
       flowEdges as unknown as WorkflowEdge[],
       nodesWithErrorsSet,
-      nodeDefinitions
+      nodeDefinitions,
+      agents
     );
-  }, [steps, flowEdges, invalidNodeIds]);
+  }, [steps, flowEdges, invalidNodeIds, agents]);
 
   const [nodes, setNodes, _onNodesChange] = useNodesState(computedNodes);
 
@@ -592,6 +582,14 @@ export default function VisualBuilder({
       }
     }
     fetchDocuments();
+  }, []);
+
+  useEffect(() => {
+    getAgents()
+      .then((res) => {
+        if (res.ok) setAgents(res.agents || []);
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {

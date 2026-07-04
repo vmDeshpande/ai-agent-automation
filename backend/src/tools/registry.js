@@ -69,6 +69,7 @@ function runToolInSandbox(toolName, functionName, args = []) {
     const TOOL_CONFIG_VARS = [
       "FILE_BASE_DIR", "PUPPETEER_HEADLESS",
       "MAIL_HOST", "MAIL_PORT", "MAIL_USER", "MAIL_PASS", "MAIL_FROM",
+      "EMAIL_HOST", "EMAIL_PORT", "EMAIL_USER", "EMAIL_PASS", "EMAIL_FROM",
       "GITHUB_TOKEN", "SLACK_WEBHOOK_URL", "DISCORD_WEBHOOK_URL"
     ];
     for (const key of TOOL_CONFIG_VARS) {

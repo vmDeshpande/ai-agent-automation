@@ -183,17 +183,39 @@ async function addTaskToWorkflow(req, res) {
       return res.status(403).json({ error: 'forbidden' });
 
     const { taskId } = req.body;
-    if (!taskId) return res.status(400).json({ error: 'taskId_required' });
 
-    if (workflow.tasks.includes(taskId)) {
+    if (!taskId) {
+      return res.status(400).json({ error: "taskId_required" });
+    }
+
+    // Verify the task exists
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({
+        ok: false,
+        error: "task_not_found",
+      });
+    }
+
+    // Verify ownership
+    if (task.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        ok: false,
+        error: "forbidden",
+      });
+    }
+
+    // Prevent duplicate association
+    if (workflow.tasks.includes(task._id)) {
       return res.json({
         ok: true,
-        message: 'Task already exists in workflow',
+        message: "Task already exists in workflow",
         workflow,
       });
     }
 
-    workflow.tasks.push(taskId);
+    workflow.tasks.push(task._id);
     await workflow.save();
 
     res.json({ ok: true, workflow });
@@ -330,7 +352,7 @@ async function updateWorkflowSteps(req, res) {
       }
 
       return {
-        stepId: rest.stepId,
+        stepId: rest.stepId || rest.id,
         name: rest.name,
         type: finalType,
         position: rest.position,
@@ -342,15 +364,15 @@ async function updateWorkflowSteps(req, res) {
     // Validate edges
     edges = Array.isArray(edges)
       ? edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          label: e.label || '',
-          condition: e.condition || null,
-          caseValue: e.caseValue || null,
-          animated: e.animated ?? true,
-          style: e.style || { strokeWidth: 2 },
-        }))
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: e.label || '',
+        condition: e.condition || null,
+        caseValue: e.caseValue || null,
+        animated: e.animated ?? true,
+        style: e.style || { strokeWidth: 2 },
+      }))
       : [];
 
     workflow.metadata = normalizeWorkflowMetadata({ steps, edges });
@@ -609,7 +631,42 @@ async function generateWorkflowAI(req, res) {
 
     const graph = await generateWorkflowGraph({ description, existingGraph });
 
-    return res.json({ ok: true, steps: graph.steps, edges: graph.edges });
+    const normalizedSteps = graph.steps.map((step) => {
+      let finalType = step.type;
+      let toolParams = {};
+
+      switch (step.type) {
+        case 'llm': finalType = 'LLM'; break;
+        case 'http': finalType = 'HTTP'; break;
+        case 'delay': finalType = 'Delay'; break;
+        case 'condition': finalType = 'Condition'; break;
+        case 'switch': finalType = 'Switch'; break;
+        case 'document_query': finalType = 'Document'; break;
+        case 'email':
+          finalType = 'Tool';
+          toolParams = { tool: 'email' };
+          break;
+        case 'file':
+          finalType = 'Tool';
+          toolParams = { tool: 'file' };
+          break;
+        case 'browser':
+          finalType = 'Tool';
+          toolParams = { tool: 'browser' };
+          break;
+      }
+
+      return {
+        ...step,
+        ...(step.config || {}),
+        id: step.stepId || step.id,
+        stepId: step.stepId || step.id,
+        type: finalType,
+        ...toolParams,
+      };
+    });
+
+    return res.json({ ok: true, steps: normalizedSteps, edges: graph.edges });
   } catch (err) {
     console.error('generateWorkflowAI error', err);
     const knownValidationErrors = [

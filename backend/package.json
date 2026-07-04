@@ -3,7 +3,7 @@
   "version": "0.9.1",
   "description": "",
   "scripts": {
-    "test": "jest --testMatch '**/*.handler.test.js'",
+    "test": "jest --testMatch \"**/*.handler.test.js\"",
     "start": "node server.js",
     "dev": "nodemon src/server.js",
     "worker": "node src/agents/runner.js",
@@ -33,6 +33,7 @@
     "express-rate-limit": "^8.5.2",
     "form-data": "^4.0.5",
     "groq-sdk": "^0.37.0",
+    "helmet": "^8.2.0",
     "huggingface": "^1.4.0",
     "jsonwebtoken": "^9.0.2",
     "mkdirp": "^3.0.1",

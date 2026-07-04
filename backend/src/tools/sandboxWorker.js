@@ -14,8 +14,12 @@ process.on("message", async (msg) => {
       throw new Error(`Standardization Contract Error: Tool "${toolName}" is missing a common "run" method.`);
     }
 
-    // Safe inline fallback string interpolation utility matrix mapping logic to prevent crashes
-    const safeInterpolate = (val) => typeof val === "string" ? val : JSON.stringify(val);
+    // Safe string interpolation utility matrix mapping logic
+    const { interpolate } = require("../agents/utils/interpolate");
+    const safeInterpolate = (val, ctx) => {
+      const context = args[1] || {};
+      return interpolate(val, ctx || context);
+    };
 
     let result;
     if (functionName === "run") {

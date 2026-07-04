@@ -31,7 +31,8 @@ export type StepType =
   | 'Discord'
   | 'Parallel'
   | 'Join'
-  | 'Approval';
+  | 'Approval'
+  | 'agent_call';
 
 export type ToolType = 'email' | 'file' | 'browser';
 

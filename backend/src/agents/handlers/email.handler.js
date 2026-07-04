@@ -6,11 +6,11 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   const nodemailer = require('nodemailer');
 
   const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: Number(process.env.EMAIL_PORT),
+    host: process.env.EMAIL_HOST || process.env.MAIL_HOST,
+    port: Number(process.env.EMAIL_PORT || process.env.MAIL_PORT || 587),
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: process.env.EMAIL_USER || process.env.MAIL_USER,
+      pass: process.env.EMAIL_PASS || process.env.MAIL_PASS,
     },
   });
 

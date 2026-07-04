@@ -16,6 +16,7 @@ const handlers = {
   mcp: require('./handlers/mcp.handler'),
   tool: require('./handlers/tool.handler'),
   approval: require('./handlers/approval.handler'),
+  agent_call: require('./handlers/agentCall.handler'),
 };
 
 async function executeStep(step, context = {}, agent = null) {
@@ -27,6 +28,24 @@ async function executeStep(step, context = {}, agent = null) {
   const maxRetries = Math.max(0, Number(stepConfig.maxRetries) || 0);
   const backoffMultiplier = Math.max(1, Number(stepConfig.backoffMultiplier) || 1);
   let currentBackoffMs = 1000; 
+  let stepAgent = agent; 
+  if (stepConfig.agentId) {
+    try {
+      const AgentModel = require('../models/agent.model'); 
+      const fetchedAgent = await AgentModel.findOne({ 
+        _id: stepConfig.agentId, 
+        userId: context.userId 
+      }).lean();
+      
+      if (fetchedAgent) {
+        stepAgent = fetchedAgent;
+      } else {
+        writeLog(`Step agent ${stepConfig.agentId} not found, falling back to global agent.`, 'warn', { taskId: context?.taskId });
+      }
+    } catch (dbErr) {
+      writeLog(`Failed to fetch step agent: ${dbErr.message}`, 'error', { taskId: context?.taskId });
+    }
+  }
 
   let lastResult = null;
   const stepStartTimeMs = performance.now();
@@ -41,7 +60,7 @@ async function executeStep(step, context = {}, agent = null) {
 
     try {
       const result = await Promise.race([
-        internalExecuteStep(step, context, agent, validatedStepId, finalTimeoutMs),
+        internalExecuteStep(step, context, stepAgent, validatedStepId, finalTimeoutMs),
         timeoutPromise,
       ]);
 
@@ -94,7 +113,7 @@ async function executeStep(step, context = {}, agent = null) {
         timestamp: new Date(),
         input: isTimeout ? '[timeout]' : '[error]',
         output: normalizedError.message,
-        error: err.stack ? String(err.stack).slice(0, 2000) : undefined,
+        error: err?.stack ? String(err.stack).slice(0, 2000) : undefined,
         errorMetadata: {
           code: normalizedError.code,
           name: normalizedError.name,

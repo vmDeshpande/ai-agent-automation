@@ -8,6 +8,15 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   let finalPrompt = prompt;
   let memoryMetrics = null;
 
+  let systemBlock = "";
+  if (agent) {
+    systemBlock = `You are ${agent.name || 'an AI agent'}.`;
+    if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
+    if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
+    if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
+    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+  }
+
   if (config.useMemory && agent) {
     const { retrieveMemory, storeMemory } = require('../../services/memoryService');
 
@@ -31,7 +40,9 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
         .join('\n\n')
         .slice(0, 4000);
 
-      finalPrompt = `SYSTEM INSTRUCTION:\nYou are an AI agent with persistent memory.\n\nMEMORY:\n${memoryText}\n\nUSER QUESTION:\n${prompt}\n\nUse the MEMORY section when relevant.`;
+      finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock || 'You are an AI agent with persistent memory.'}\n\nMEMORY:\n${memoryText}\n\nUSER QUESTION:\n${prompt}\n\nUse the MEMORY section when relevant.`;
+    } else if (systemBlock) {
+      finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nUSER QUESTION:\n${prompt}`;
     }
 
     const llmRes = await runLLM(finalPrompt, {
@@ -68,7 +79,11 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
     });
   }
 
-  const llmRes = await runLLM(prompt, {
+  if (systemBlock) {
+    finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nUSER QUESTION:\n${prompt}`;
+  }
+
+  const llmRes = await runLLM(finalPrompt, {
     provider: agent?.config?.provider,
     model: agent?.config?.model,
     temperature: agent?.config?.temperature,

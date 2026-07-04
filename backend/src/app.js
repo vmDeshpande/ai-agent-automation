@@ -21,6 +21,7 @@ const mcpRoutes = require('./routes/mcp.routes');
 const apiKeyRoutes = require('./routes/apiKey.routes');
 const workflowPublicRoutes = require('./routes/workflow.public.routes');
 const { globalLimiter, webhookLimiter } = require('./middleware/rateLimit.middleware');
+const helmetMiddleware = require('./middleware/helmet.middleware.js');
 require('dotenv').config();
 
 const app = express();
@@ -28,6 +29,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
+app.use(helmetMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
