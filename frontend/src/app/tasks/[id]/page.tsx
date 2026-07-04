@@ -5,7 +5,24 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { Card } from '@/components/ui/card';
-import { AuthenticatedLayout } from "@/components/layout/authenticated-layout";
+import { MetricCard } from '@/components/workflow/MetricCard';
+import { ExecutionTimeline } from '@/components/workflow/ExecutionTimeline';
+import { StepDetailsPane } from '@/components/workflow/StepDetailsPane';
+import { JsonViewer } from '@/components/workflow/JsonViewer';
+import {
+  Target,
+  Clock,
+  Layers,
+  Coins,
+  Copy,
+  ArrowLeft,
+  Download,
+  RotateCcw,
+  Play,
+  Settings,
+} from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AuthenticatedLayout } from '@/components/layout/authenticated-layout';
 
 import { Badge } from '@/components/ui/badge';
 import { useApi } from '@/hooks/useApi';
@@ -13,7 +30,6 @@ import {
   CheckCircle2,
   XCircle,
   Circle,
-  Clock,
   ChevronDown,
   Bot,
   Cpu,
@@ -21,8 +37,6 @@ import {
   Database,
   ShieldCheck,
   Globe,
-  Play,
-  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -149,6 +163,7 @@ export default function TaskDetailPage() {
   }, [task]);
 
   const { addToast } = useToast();
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
   const [approvalFeedback, setApprovalFeedback] = useState('');
   const [isResuming, setIsResuming] = useState(false);
@@ -379,53 +394,54 @@ export default function TaskDetailPage() {
   const stepResults = task.stepResults ?? [];
   return (
     <AuthenticatedLayout>
-      <>
-            <div className="mb-8">
+      <div className="flex flex-col min-h-[calc(100vh-6rem)]">
+        <div className="flex items-center justify-between mb-6 shrink-0">
+          <div className="flex items-center gap-3">
+            <Link href={`/workflows/${task.workflowId}`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </Link>
+            <div>
               <div className="flex items-center gap-3">
-                <h1 className="font-mono text-2xl font-bold">{task.name}</h1>
+                <h1 className="text-2xl font-bold tracking-tight">
+                  Execution: exe_{task._id.substring(0, 8)}
+                </h1>
                 <Badge
+                  variant="outline"
                   className={
                     task.status === 'completed'
-                      ? 'bg-success/20 text-success border-success/30'
+                      ? 'bg-success/10 text-success border-success/20'
                       : task.status === 'failed' || task.status === 'rejected'
-                        ? 'bg-destructive/20 text-destructive border-destructive/30'
-                        : task.status === 'pending_approval'
-                          ? 'bg-amber-500/20 text-amber-600 border-amber-500/30'
-                          : task.status === 'running'
-                            ? 'bg-warning/20 text-warning border-warning/30'
+                        ? 'bg-destructive/10 text-destructive border-destructive/20'
+                        : task.status === 'running'
+                          ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                          : task.status === 'pending_approval'
+                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                             : 'bg-muted text-muted-foreground'
                   }
                 >
-                  {task.status}
+                  <span className="flex items-center gap-1.5 capitalize">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        task.status === 'completed'
+                          ? 'bg-success'
+                          : task.status === 'failed' || task.status === 'rejected'
+                            ? 'bg-destructive'
+                            : task.status === 'running'
+                              ? 'bg-blue-500'
+                              : task.status === 'pending_approval'
+                                ? 'bg-amber-500'
+                                : 'bg-muted-foreground'
+                      }`}
+                    />
+                    {task.status.replace('_', ' ')}
+                  </span>
                 </Badge>
-                {['failed', 'retrying', 'rejected'].includes(task.status) && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleResumeTask()}
-                      disabled={isResuming}
-                      className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
-                    >
-                      {isResuming ? 'Resuming...' : 'Resume Execution'}
-                    </Button>
-
-                    {task.status === 'failed' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRerunFromFailed}
-                        disabled={isRerunning}
-                        className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
-                      >
-                        <RotateCcw className="mr-2 size-4" />
-                        {isRerunning ? 'Creating...' : 'Rerun from Failed'}
-                      </Button>
-                    )}
-                  </>
-                )}
               </div>
-              <p className="mt-2 text-muted-foreground">Workflow id: {task.workflowId}</p>
+              <p className="text-muted-foreground text-sm mt-2">
+                Started {new Date(task.createdAt).toLocaleString()} • Workflow id: {task.workflowId}
+              </p>
               {(task.metadata as any)?.trigger === 'workflow_api' && (
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground bg-muted/30 border border-border/50 rounded-lg p-3 w-fit">
                   <span className="font-semibold text-foreground flex items-center gap-1.5">
@@ -461,309 +477,408 @@ export default function TaskDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleResumeTask()}
+              disabled={isResuming || task.status !== 'pending_approval'}
+            >
+              <RotateCcw className="mr-2 size-3.5" />
+              Retry
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRerunFromFailed}
+              disabled={isRerunning || task.status !== 'failed'}
+            >
+              <Play className="mr-2 size-3.5" />
+              Rerun
+            </Button>
+            <Button variant="outline" size="sm">
+              <Download className="mr-2 size-3.5" />
+              Export
+            </Button>
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <Card className="p-6">
-                  <h2 className="mb-6 text-xl font-semibold">
-                    Execution Timeline ({executedSteps}/{totalSteps})
-                  </h2>
+        <div className="grid grid-cols-5 gap-4 mb-6 shrink-0">
+          <MetricCard
+            title="Status"
+            value={task.status.charAt(0).toUpperCase() + task.status.slice(1).replace('_', ' ')}
+            icon={Target}
+            subtitle={task.status === 'completed' ? 'Success' : '-'}
+          />
+          <MetricCard title="Total Duration" value="-" icon={Clock} subtitle="Start to finish" />
+          <MetricCard
+            title="Steps"
+            value={task.metadata?.steps?.length || 0}
+            icon={Layers}
+            subtitle={`${task.stepResults?.filter((r) => r.success).length || 0} success, ${task.stepResults?.filter((r) => r.success === false).length || 0} failed`}
+          />
+          <MetricCard
+            title="Tokens Used"
+            value="-"
+            icon={Coins}
+            subtitle="Prompt: - Completion: -"
+          />
+          <MetricCard title="Estimated Cost" value="-" icon={Coins} subtitle="tokens" />
+        </div>
 
-                  {/* HITL Approval Card */}
-                  {task.status === 'pending_approval' && task.approval && (
-                    <Card className="mb-6 border-amber-500/30 bg-amber-500/5 p-4">
-                      <div className="flex items-start gap-4">
-                        <div className="rounded-full bg-amber-500/20 p-2">
-                          <ShieldCheck className="size-6 text-amber-500" />
+        <div className="flex flex-col flex-1 min-h-0">
+          <Tabs defaultValue="timeline" className="flex flex-col h-full w-full">
+            <div className="border-b border-border/50 px-4 mb-4">
+              <TabsList className="bg-transparent h-12 p-0 gap-6">
+                <TabsTrigger
+                  value="timeline"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium"
+                >
+                  Timeline
+                </TabsTrigger>
+                <TabsTrigger
+                  value="steps"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium"
+                >
+                  Steps
+                </TabsTrigger>
+                <TabsTrigger
+                  value="metrics"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium text-muted-foreground"
+                >
+                  Metrics
+                </TabsTrigger>
+                <TabsTrigger
+                  value="payload"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium"
+                >
+                  Payload
+                </TabsTrigger>
+                <TabsTrigger
+                  value="configuration"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium"
+                >
+                  Configuration
+                </TabsTrigger>
+                <TabsTrigger
+                  value="artifacts"
+                  className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-12 font-medium text-muted-foreground"
+                >
+                  Artifacts
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent
+              value="timeline"
+              className="flex-1 min-h-0 m-0 p-0 data-[state=inactive]:hidden flex flex-col"
+            >
+              <div className="flex flex-col gap-6 flex-1 min-h-0">
+                <div className="w-full flex-1 flex flex-col min-h-[400px]">
+                  <ExecutionTimeline
+                    steps={task.metadata?.steps || []}
+                    results={task.stepResults || []}
+                    status={task.status}
+                    onStepSelect={setSelectedStepId}
+                    selectedStepId={selectedStepId}
+                    taskCreatedAt={task.createdAt}
+                  />
+                </div>
+
+                {/* HITL Approval Card */}
+                {task.status === 'pending_approval' && task.approval && (
+                  <Card className="mb-6 border-amber-500/30 bg-amber-500/5 p-4">
+                    <div className="flex items-start gap-4">
+                      <div className="rounded-full bg-amber-500/20 p-2">
+                        <ShieldCheck className="size-6 text-amber-500" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-amber-600 dark:text-amber-500">
+                          Human Approval Required
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          The workflow is paused at step{' '}
+                          <span className="font-mono font-bold text-foreground">
+                            {task.metadata?.steps?.find((s) => s.stepId === task.pausedAtStepId)
+                              ?.name || task.pausedAtStepId}
+                          </span>
+                          . Please review the execution up to this point and approve or reject to
+                          continue.
+                        </p>
+
+                        <div className="mt-4">
+                          <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                            Feedback / Notes (Optional)
+                          </label>
+                          <Textarea
+                            placeholder="Add any notes for the audit log..."
+                            value={approvalFeedback}
+                            onChange={(e) => setApprovalFeedback(e.target.value)}
+                            className="min-h-[80px] bg-background text-sm"
+                          />
                         </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-amber-600 dark:text-amber-500">
-                            Human Approval Required
-                          </h3>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            The workflow is paused at step{' '}
-                            <span className="font-mono font-bold text-foreground">
-                              {task.metadata?.steps?.find((s) => s.stepId === task.pausedAtStepId)
-                                ?.name || task.pausedAtStepId}
-                            </span>
-                            . Please review the execution up to this point and approve or reject to
-                            continue.
-                          </p>
 
-                          <div className="mt-4">
-                            <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                              Feedback / Notes (Optional)
-                            </label>
-                            <Textarea
-                              placeholder="Add any notes for the audit log..."
-                              value={approvalFeedback}
-                              onChange={(e) => setApprovalFeedback(e.target.value)}
-                              className="min-h-[80px] bg-background text-sm"
-                            />
-                          </div>
-
-                          <div className="mt-4 flex items-center gap-3">
-                            <Button
-                              onClick={() => handleApprovalDecision('approve')}
-                              disabled={isSubmittingApproval}
-                              className="bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
-                            >
-                              Approve & Continue
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => handleApprovalDecision('reject')}
-                              disabled={isSubmittingApproval}
-                              className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                            >
-                              Reject & Stop
-                            </Button>
-                          </div>
+                        <div className="mt-4 flex items-center gap-3">
+                          <Button
+                            onClick={() => handleApprovalDecision('approve')}
+                            disabled={isSubmittingApproval}
+                            className="bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+                          >
+                            Approve & Continue
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => handleApprovalDecision('reject')}
+                            disabled={isSubmittingApproval}
+                            className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                          >
+                            Reject & Stop
+                          </Button>
                         </div>
                       </div>
-                    </Card>
-                  )}
-
-                  {/* Retry History List */}
-                  {task.retryHistory && task.retryHistory.length > 0 && (
-                    <div className="mb-6 space-y-3">
-                      {task.retryHistory.map((history, hIndex) => (
-                        <Collapsible
-                          key={hIndex}
-                          className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"
-                        >
-                          <CollapsibleTrigger className="group flex w-full items-center justify-between text-left">
-                            <div className="flex items-center gap-3">
-                              <XCircle className="size-4 text-destructive" />
-                              <div>
-                                <span className="font-mono text-sm font-semibold text-destructive">
-                                  Attempt #{history.attempt} - Failed
-                                </span>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {history.error} • {new Date(history.failedAt).toLocaleString()}
-                                </p>
-                              </div>
-                            </div>
-                            <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent className="mt-4 pl-7 border-t border-border/50 pt-3 space-y-3">
-                            <p className="text-xs font-semibold text-muted-foreground mb-2">
-                              Historical Step Timeline:
-                            </p>
-                            {history.stepResults?.map((step, sIndex) => {
-                              const stepsMeta = task.steps ?? task.metadata?.steps ?? [];
-                              const stepMetadata = stepsMeta.find((s) => s.stepId === step.stepId);
-                              return (
-                                <div key={sIndex} className="flex items-start gap-3 text-xs">
-                                  {step.success ? (
-                                    <CheckCircle2 className="size-4 text-success mt-0.5" />
-                                  ) : (
-                                    <XCircle className="size-4 text-destructive mt-0.5" />
-                                  )}
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium">
-                                        {stepMetadata?.name || step.stepId}
-                                      </span>
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                        {step.type}
-                                      </Badge>
-                                    </div>
-                                    {step.output && (
-                                      <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[10px] text-muted-foreground border">
-                                        {typeof step.output === 'string'
-                                          ? step.output
-                                          : JSON.stringify(step.output, null, 2)}
-                                      </pre>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </CollapsibleContent>
-                        </Collapsible>
-                      ))}
                     </div>
-                  )}
+                  </Card>
+                )}
 
-                  <div className="space-y-4">
-                    {stepResults.map((step: StepResult, index: number) => {
-                      const outputText =
-                        typeof step.output === 'string'
-                          ? step.output
-                          : JSON.stringify(step.output, null, 2);
-                      const stepsMeta = task.metadata?.steps ?? [];
-
-                      const stepMetadata = stepsMeta.find((s) => s.stepId === step.stepId);
-                      return (
-                        <div key={index} className="relative">
-                          {index < stepResults.length - 1 && (
-                            <div className="absolute left-2.5 top-10 h-[calc(100%+1rem)] w-0.5 bg-border" />
-                          )}
-                          <Collapsible>
-                            <div className="flex items-start gap-4">
-                              {getStepIcon(
-                                step.success === true
-                                  ? 'completed'
-                                  : step.success === false
-                                    ? 'failed'
-                                    : 'running'
-                              )}
-
-                              <div className="flex-1">
-                                <CollapsibleTrigger className="group flex w-full items-start justify-between text-left">
-                                  <div className="flex-1">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      <h3 className="font-semibold">
-                                        {stepMetadata?.name || step.stepId}
-                                      </h3>
-                                      <Badge variant="outline" className="text-xs">
-                                        {step.type}
-                                      </Badge>
-
-                                      {step.executedBy?.agentName && (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20 dark:text-indigo-400 flex items-center gap-1.5"
-                                        >
-                                          <Bot className="size-3" />
-                                          {step.executedBy.agentName}
-                                          <span className="opacity-40 mx-0.5">|</span>
-                                          {step.executedBy.provider}/{step.executedBy.model}
-                                        </Badge>
-                                      )}
-
-                                      {['failed', 'retrying', 'rejected'].includes(task.status) && (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-6 px-2 text-[10px] text-primary hover:text-primary-hover flex items-center gap-1 bg-primary/5 hover:bg-primary/10 border-primary/20"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleResumeTask(step.stepId);
-                                          }}
-                                          disabled={isResuming}
-                                        >
-                                          <Play className="size-2.5" />
-                                          Resume from here
-                                        </Button>
-                                      )}
-                                    </div>
-
-                                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                                      <Clock className="size-3" />
-                                      {new Date(step.timestamp).toLocaleString()}
-                                    </div>
-                                  </div>
-                                  <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                                </CollapsibleTrigger>
-                                <CollapsibleContent className="mt-3">
-                                  <Card className="bg-muted/30 p-4">
-                                    <p className="mb-2 text-sm font-medium">Output:</p>
-                                    {step.output && (
-                                      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-background p-3 font-mono text-xs text-foreground">
-                                        {renderStepOutput(step.output)}
-                                      </pre>
-                                    )}
-                                  </Card>
-                                </CollapsibleContent>
-                              </div>
+                {/* Retry History List */}
+                {task.retryHistory && task.retryHistory.length > 0 && (
+                  <div className="mb-6 space-y-3">
+                    {task.retryHistory.map((history, hIndex) => (
+                      <Collapsible
+                        key={hIndex}
+                        className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"
+                      >
+                        <CollapsibleTrigger className="group flex w-full items-center justify-between text-left">
+                          <div className="flex items-center gap-3">
+                            <XCircle className="size-4 text-destructive" />
+                            <div>
+                              <span className="font-mono text-sm font-semibold text-destructive">
+                                Attempt #{history.attempt} - Failed
+                              </span>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {history.error} • {new Date(history.failedAt).toLocaleString()}
+                              </p>
                             </div>
-                          </Collapsible>
-                        </div>
+                          </div>
+                          <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-4 pl-7 border-t border-border/50 pt-3 space-y-3">
+                          <p className="text-xs font-semibold text-muted-foreground mb-2">
+                            Historical Step Timeline:
+                          </p>
+                          {history.stepResults?.map((step, sIndex) => {
+                            const stepsMeta = task.steps ?? task.metadata?.steps ?? [];
+                            const stepMetadata = stepsMeta.find((s) => s.stepId === step.stepId);
+                            return (
+                              <div key={sIndex} className="flex items-start gap-3 text-xs">
+                                {step.success ? (
+                                  <CheckCircle2 className="size-4 text-success mt-0.5" />
+                                ) : (
+                                  <XCircle className="size-4 text-destructive mt-0.5" />
+                                )}
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {stepMetadata?.name || step.stepId}
+                                    </span>
+                                    <Badge variant="outline" className="text-[10px] px-1 py-0">
+                                      {step.type}
+                                    </Badge>
+                                  </div>
+                                  {step.output && (
+                                    <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[10px] text-muted-foreground border">
+                                      {typeof step.output === 'string'
+                                        ? step.output
+                                        : JSON.stringify(step.output, null, 2)}
+                                    </pre>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ))}
+                  </div>
+                )}
+
+                <div className="w-full flex-1 flex flex-col min-h-[450px]">
+                  <StepDetailsPane
+                    step={
+                      task.metadata?.steps?.find(
+                        (s) => (s.stepId || (s as any).id) === selectedStepId
+                      ) || null
+                    }
+                    result={task.stepResults?.find((r) => r.stepId === selectedStepId) || null}
+                    status={task.status}
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="steps"
+              className="flex-1 min-h-0 m-0 p-4 overflow-y-auto data-[state=inactive]:hidden"
+            >
+              <div className="rounded-md border border-border">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/20 border-b border-border/50 text-muted-foreground text-xs uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Step</th>
+                      <th className="px-4 py-3 font-semibold">Type</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
+                      <th className="px-4 py-3 font-semibold">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {(task.metadata?.steps || []).map((step, idx) => {
+                      const result = task.stepResults?.find(
+                        (r) => r.stepId === (step.stepId || (step as any).id)
+                      );
+                      const status = result
+                        ? result.success
+                          ? 'Success'
+                          : 'Failed'
+                        : task.status === 'running'
+                          ? 'Pending'
+                          : 'Pending';
+                      return (
+                        <tr
+                          key={step.stepId || (step as any).id}
+                          className="hover:bg-muted/10 transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium">
+                              {step.name || step.stepId || (step as any).id}
+                            </div>
+                            <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                              {step.stepId || (step as any).id}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="text-[10px] bg-muted/20">
+                              {step.type}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            {status === 'Success' && (
+                              <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20">
+                                Success
+                              </Badge>
+                            )}
+                            {status === 'Failed' && (
+                              <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20">
+                                Failed
+                              </Badge>
+                            )}
+                            {status === 'Pending' && (
+                              <Badge variant="outline" className="text-muted-foreground">
+                                Pending
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
+                            {result?.timestamp ? new Date(result.timestamp).toLocaleString() : '-'}
+                          </td>
+                        </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            </TabsContent>
 
-                    {executedSteps === 0 && <p className="opacity-60">No steps executed yet.</p>}
+            <TabsContent
+              value="metrics"
+              className="flex-1 min-h-0 m-0 p-8 flex items-center justify-center text-muted-foreground data-[state=inactive]:hidden"
+            >
+              <div className="text-center">
+                <Target className="size-8 mx-auto mb-3 opacity-20" />
+                <p>No metrics data available for this execution.</p>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="payload"
+              className="flex-1 min-h-0 m-0 p-4 flex flex-col data-[state=inactive]:hidden"
+            >
+              {!selectedStepId ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground border border-border/50 border-dashed rounded-md bg-muted/5">
+                  <Target className="size-8 mx-auto mb-3 opacity-20" />
+                  <p>Select a step from the Timeline to view its payload</p>
+                </div>
+              ) : (
+                <div className="flex flex-1 gap-4 min-h-0">
+                  <div className="w-1/2 flex flex-col border border-border/50 rounded-md overflow-hidden">
+                    <div className="bg-muted/20 border-b border-border/50 px-4 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                      Input Configuration
+                    </div>
+                    <div className="flex-1 min-h-0 bg-[#1e1e1e]">
+                      <JsonViewer
+                        data={task.metadata?.steps?.find(
+                          (s) => (s.stepId || (s as any).id) === selectedStepId
+                        )}
+                      />
+                    </div>
                   </div>
-                </Card>
-              </div>
+                  <div className="w-1/2 flex flex-col border border-border/50 rounded-md overflow-hidden">
+                    <div className="bg-muted/20 border-b border-border/50 px-4 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                      Execution Output
+                    </div>
+                    <div className="flex-1 min-h-0 bg-[#1e1e1e]">
+                      <JsonViewer
+                        data={
+                          task.stepResults?.find((r) => r.stepId === selectedStepId)?.output || null
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
 
+            <TabsContent
+              value="configuration"
+              className="flex-1 min-h-0 m-0 p-4 overflow-y-auto data-[state=inactive]:hidden"
+            >
               <div className="space-y-6">
-                {agent && (
-                  <Card className="p-6">
-                    <h2 className="mb-4 text-lg font-semibold">Agent Inspector</h2>
-
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <Bot className="size-5 text-primary" />
-                        <div>
-                          <p className="text-sm font-medium">{agent.name}</p>
-                          <p className="text-xs text-muted-foreground">{agent.type}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <Cpu className="size-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Model</p>
-                          <p className="text-xs text-muted-foreground">
-                            {agent.config?.model ?? '—'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <Thermometer className="size-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Temperature</p>
-                          <p className="text-xs text-muted-foreground">
-                            {agent.config?.temperature ?? '—'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className="mb-2 text-sm font-medium">Capabilities</p>
-                        <div className="flex flex-wrap gap-2">
-                          {(agent.capabilities ?? []).map((tool: string) => (
-                            <Badge key={tool} variant="outline" className="text-xs">
-                              {tool}
-                            </Badge>
-                          ))}
-                        </div>
+                {(task.metadata?.steps || []).map((step, idx) => (
+                  <div
+                    key={step.stepId || (step as any).id}
+                    className="border border-border/50 rounded-lg overflow-hidden"
+                  >
+                    <div className="bg-muted/20 px-4 py-3 border-b border-border/50 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground">{idx + 1}.</span>
+                        <span className="font-semibold text-sm">
+                          {step.name || step.stepId || (step as any).id}
+                        </span>
+                        <Badge variant="outline" className="text-[10px] h-5 ml-2">
+                          {step.type}
+                        </Badge>
                       </div>
                     </div>
-                  </Card>
-                )}
-
-                {agent?.memory && agent.memory.length > 0 && (
-                  <Card className="p-6">
-                    <div className="mb-4 flex items-center gap-2">
-                      <Database className="size-5 text-primary" />
-                      <h2 className="text-lg font-semibold">Agent Memory</h2> {/*  IN PROGRESS */}
+                    <div className="bg-[#1e1e1e] h-48 overflow-hidden relative">
+                      <JsonViewer data={step} />
                     </div>
-
-                    <div className="space-y-3">
-                      {agent.memory.map((item: AgentMemoryItem, index: number) => (
-                        <Card key={`${item.createdAt}-${index}`} className="bg-muted/30 p-3">
-                          <div className="mb-1 flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={
-                                item.type === 'system'
-                                  ? 'bg-primary/20 text-primary border-primary/30'
-                                  : 'bg-success/20 text-success border-success/30'
-                              }
-                            >
-                              {item.type}
-                            </Badge>
-
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(item.createdAt).toLocaleString()}
-                            </span>
-                          </div>
-
-                          <p className="text-xs">{item.content}</p>
-                        </Card>
-                      ))}
-                    </div>
-                  </Card>
-                )}
+                  </div>
+                ))}
               </div>
-            </div>
-          
-      </>
+            </TabsContent>
+
+            <TabsContent
+              value="artifacts"
+              className="flex-1 min-h-0 m-0 p-8 flex items-center justify-center text-muted-foreground data-[state=inactive]:hidden"
+            >
+              <div className="text-center">
+                <Layers className="size-8 mx-auto mb-3 opacity-20" />
+                <p>No artifacts generated by this execution.</p>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
     </AuthenticatedLayout>
   );
 }
