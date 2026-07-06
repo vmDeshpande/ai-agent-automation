@@ -88,11 +88,6 @@ export function InspectorPanel({
                         config: { ...(step.config || {}), [field.name]: val },
                       });
                     }}
-                    documents={documents}
-                    mcpTools={mcpTools}
-                    steps={steps}
-                    edges={edges}
-                    currentStepId={step.id}
                   />
                 </div>
               </div>
