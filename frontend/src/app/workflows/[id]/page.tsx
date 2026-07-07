@@ -20,6 +20,7 @@ import {
   Settings,
   ListChecks,
   ArrowRight,
+  ArrowDown,
   CheckCircle2,
   Circle,
   XCircle,
@@ -150,7 +151,11 @@ function getTypeColor(type: string) {
  * Finds the node definition by type and returns the first non-empty field values.
  * Falls back gracefully for types not yet loaded.
  */
-function getStepDescription(step: WorkflowStep, nodeDefinitions: NodeDefinition[] = [], agentMap: Record<string, string> = {}): string {
+function getStepDescription(
+  step: WorkflowStep,
+  nodeDefinitions: NodeDefinition[] = [],
+  agentMap: Record<string, string> = {}
+): string {
   const lowerType = (step.type || '').toLowerCase();
   const def = nodeDefinitions.find((d) => d.id.toLowerCase() === lowerType);
 
@@ -158,9 +163,12 @@ function getStepDescription(step: WorkflowStep, nodeDefinitions: NodeDefinition[
     const parts: string[] = [];
     for (const field of def.fields) {
       let val = step.config?.[field.name] ?? (step as any)[field.name];
-      
+
       if (val !== undefined && val !== null && String(val).trim() !== '') {
-        if ((field.name === 'agentId' || field.label.includes('Agent')) && agentMap[val as string]) {
+        if (
+          (field.name === 'agentId' || field.label.includes('Agent')) &&
+          agentMap[val as string]
+        ) {
           val = agentMap[val as string];
         }
 
@@ -180,7 +188,7 @@ function getStepDescription(step: WorkflowStep, nodeDefinitions: NodeDefinition[
   if (config.prompt || anyStep.prompt) return (config.prompt || anyStep.prompt).slice(0, 160);
   if (config.url && config.method) return `${config.method} ${config.url}`;
   if (config.seconds) return `Wait for ${config.seconds} seconds`;
-  
+
   if (lowerType === 'agent_call') {
     return config.agentId ? 'Delegated' : 'Target agent not set';
   }
@@ -199,6 +207,7 @@ export default function WorkflowDetailPage() {
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const [selectedAgent, setSelectedAgent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [activeView, setActiveView] = useState<'pipeline' | 'history'>('pipeline');
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [nodeDefinitions, setNodeDefinitions] = useState<NodeDefinition[]>([]);
   const [apiSettingsOpen, setApiSettingsOpen] = useState<boolean>(false);
@@ -449,9 +458,14 @@ export default function WorkflowDetailPage() {
               {workflow.description || 'Workflow pipeline visualization'}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {latestTask && (latestTask.status === 'pending' || latestTask.status === 'running') && (
+              <Badge className="bg-blue-500 hover:bg-blue-600 text-white border-transparent uppercase text-[10px] tracking-wider py-1 px-2">
+                pending
+              </Badge>
+            )}
             <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[180px] h-9">
                 <SelectValue placeholder="Select Agent" />
               </SelectTrigger>
               <SelectContent>
@@ -466,12 +480,19 @@ export default function WorkflowDetailPage() {
               <Settings className="mr-2 size-4" />
               Save Agent
             </Button>
+
             <Link href={`/workflows/${workflow._id}/builder`}>
               <Button variant="outline" className="h-9">
                 <Settings className="mr-2 size-4" />
-                Edit
+                Configure
               </Button>
             </Link>
+
+            <Button variant="outline" className="h-9" onClick={exportWorkflow}>
+              <Download className="mr-2 size-4" />
+              Export Workflow
+            </Button>
+
             <Button variant="outline" className="h-9" onClick={() => setApiSettingsOpen(true)}>
               <ShieldCheck className="mr-2 size-4" />
               API
@@ -502,7 +523,6 @@ export default function WorkflowDetailPage() {
               Run Now
             </Button>
           </div>
-
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -518,8 +538,80 @@ export default function WorkflowDetailPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2 flex flex-col gap-6">
-            <ExecutionHistoryTable taskIds={tasks} />
+          <div className="xl:col-span-2 flex flex-col gap-6" id="execution-history">
+            <div className="flex items-center gap-2 bg-muted/40 p-1.5 rounded-lg border border-border/50">
+              <Button
+                variant="ghost"
+                className={`flex-1 justify-center ${activeView === 'pipeline' ? 'bg-background text-foreground shadow-sm cursor-default' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveView('pipeline')}
+              >
+                <Settings className="mr-2 size-4" />
+                Workflow Pipeline
+              </Button>
+              <Button
+                variant="ghost"
+                className={`flex-1 justify-center ${activeView === 'history' ? 'bg-background text-foreground shadow-sm cursor-default' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveView('history')}
+              >
+                <ListChecks className="mr-2 size-4" />
+                Task History
+              </Button>
+              <Button
+                variant="ghost"
+                className="flex-1 justify-center text-muted-foreground hover:text-foreground"
+                onClick={() => setHistoryOpen(true)}
+              >
+                <History className="mr-2 size-4" />
+                Version History
+              </Button>
+            </div>
+
+            <div className="max-h-[400px] overflow-y-auto pr-2 rounded-xl border border-border/40 bg-card">
+              {activeView === 'history' ? (
+                <ExecutionHistoryTable taskIds={tasks} />
+              ) : (
+                <div className="flex flex-col gap-2 p-4">
+                  {(workflow.metadata?.steps || []).map((step: WorkflowStep, index: number) => {
+                    const status = getStepStatus(step.stepId);
+                    const isFailed = status === 'failed';
+                    const isCompleted = status === 'completed';
+                    return (
+                      <div key={step.stepId} className="flex flex-col items-center">
+                        <div
+                          className={`w-full p-4 rounded-xl border ${isFailed ? 'border-destructive/50 bg-destructive/5' : isCompleted ? 'border-success/50 bg-success/5' : 'border-border bg-card shadow-sm'}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {getStepIcon(status)}
+                            <Badge
+                              variant="secondary"
+                              className={`${getTypeColor(step.type)} px-2 py-0 text-[10px] uppercase font-mono`}
+                            >
+                              {step.type || 'unknown'}
+                            </Badge>
+                            <span className="font-semibold text-foreground">
+                              {step.name || step.type || 'Unnamed step'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground pl-[44px]">
+                            {getStepDescription(step, nodeDefinitions, agentMap)}
+                          </p>
+                        </div>
+                        {index < (workflow.metadata?.steps?.length || 0) - 1 && (
+                          <div className="flex justify-center py-4">
+                            <ArrowDown className="text-muted-foreground size-5" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(!workflow.metadata?.steps || workflow.metadata.steps.length === 0) && (
+                    <div className="p-8 text-center text-muted-foreground border border-dashed rounded-xl">
+                      No steps configured for this workflow.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <Card className="p-0 border-border bg-card shadow-sm rounded-xl overflow-hidden">
               <div className="p-4 border-b border-border/50">

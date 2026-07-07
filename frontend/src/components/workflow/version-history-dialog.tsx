@@ -172,7 +172,7 @@ export default function VersionHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0 overflow-hidden bg-background border border-border shadow-2xl rounded-xl">
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 overflow-hidden bg-background border border-border shadow-2xl rounded-xl">
         <DialogHeader className="px-6 py-4 border-b border-border bg-muted/20">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
@@ -325,7 +325,7 @@ export default function VersionHistoryDialog({
                   </div>
 
                   {/* Steps list */}
-                  <ScrollArea className="flex-1 p-6">
+                  <div className="flex-1 p-6 overflow-y-auto">
                     <h4 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider">
                       Steps Pipeline (
                       {selectedVersion.workflowSnapshot.metadata?.steps?.length || 0})
@@ -375,7 +375,7 @@ export default function VersionHistoryDialog({
                         </div>
                       )}
                     </div>
-                  </ScrollArea>
+                  </div>
 
                   {/* Action Bar or Confirm Overlay */}
                   <div className="p-4 border-t border-border bg-muted/10 flex justify-end">
