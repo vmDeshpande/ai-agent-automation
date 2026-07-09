@@ -252,7 +252,7 @@ export default function WorkflowBuilderPage() {
   const [savedEdgesSnapshot, setSavedEdgesSnapshot] = useState<string>("[]");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [invalidNodeIds, setInvalidNodeIds] = useState<string[]>([]);
-
+  const [stepSearch, setStepSearch] = useState("");
   const hasUnsavedChanges = 
     JSON.stringify(steps) !== savedStepsSnapshot || 
     JSON.stringify(edges) !== savedEdgesSnapshot;
@@ -466,7 +466,16 @@ export default function WorkflowBuilderPage() {
       },
     ]);
   }
+  const filteredSteps = steps.filter((step) => {
+  const query = stepSearch.trim().toLowerCase();
 
+  if (!query) return true;
+
+  return (
+    step.name.toLowerCase().includes(query) ||
+    step.type.toLowerCase().includes(query)
+  );
+});
   function enrichStepsWithEdges(steps: WorkflowStep[], edges: any[]) {
     return steps.map((step) => {
       if (step.type === "Switch") {
@@ -873,9 +882,30 @@ export default function WorkflowBuilderPage() {
             )}
 
             {builderMode === "list" && (
-              <div className="mx-auto max-w-3xl space-y-4">
-                <AnimatePresence initial={false}>
-                  {steps.map((step, index) => (
+  <div className="mx-auto max-w-3xl space-y-4">
+    <div className="flex items-center gap-2">
+      <Input
+        placeholder="Search steps by name or type..."
+        value={stepSearch}
+        onChange={(e) => setStepSearch(e.target.value)}
+      />
+
+      {stepSearch && (
+        <Button
+          variant="outline"
+          onClick={() => setStepSearch("")}
+        >
+          Clear
+        </Button>
+      )}
+    </div>
+    {filteredSteps.length === 0 && (
+      <Card className="p-6 text-center text-sm text-muted-foreground">
+        No steps found for "{stepSearch}".
+      </Card>
+    )}  
+    <AnimatePresence initial={false}>
+      {filteredSteps.map((step, index) => (
                     <motion.div
                       key={step.id}
                       layout
