@@ -1,44 +1,94 @@
+const mongoose = require('mongoose');
+const fs = require('fs').promises;
 const Workflow = require('../models/workflow.model');
 const Task = require('../models/task.model');
 const Agent = require('../models/agent.model');
 const Schedule = require('../models/schedule.model');
 
-// -----------------------------
-// GET /api/dashboard/stats
-// -----------------------------
 async function getDashboardStats(req, res) {
   try {
     const userId = req.user._id;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [workflowCount, taskCount, runningTaskCount, activeAgentCount, activeScheduleCount] =
-      await Promise.all([
-        Workflow.countDocuments({ userId }),
-        Task.countDocuments({ userId }),
-        Task.countDocuments({ userId, status: 'running' }),
-        Agent.countDocuments({ userId, isActive: true }),
-        Schedule.countDocuments({ userId, enabled: true }),
-      ]);
+    const [
+      workflowCount,
+      recentWorkflows,
+      taskCount,
+      completedTasks,
+      failedTasks,
+      runningTasks,
+      pendingTasks,
+      activeAgents,
+      totalAgents,
+      enabledSchedules,
+      disabledSchedules,
+      activeWorkers
+    ] = await Promise.all([
+      Workflow.countDocuments({ userId }),
+      Workflow.countDocuments({ userId, createdAt: { $gte: sevenDaysAgo } }),
+      Task.countDocuments({ userId }),
+      Task.countDocuments({ userId, status: 'completed' }),
+      Task.countDocuments({ userId, status: 'failed' }),
+      Task.countDocuments({ userId, status: 'running' }),
+      Task.countDocuments({ userId, status: 'pending' }),
+      Agent.countDocuments({ userId, isActive: true }),
+      Agent.countDocuments({ userId }),
+      Schedule.countDocuments({ userId, enabled: true }),
+      Schedule.countDocuments({ userId, enabled: false }),
+      Agent.countDocuments({ userId, isActive: true, updatedAt: { $gte: new Date(Date.now() - 5 * 60000) } })
+    ]);
+
+    const dbStatus = mongoose.connection.readyState === 1 ? 'operational' :
+                     mongoose.connection.readyState === 2 ? 'degraded' : 'offline';
+
+    let storageStatus = 'operational';
+    try {
+      await fs.access(__dirname);
+    } catch (e) {
+      storageStatus = 'offline';
+    }
+
+    let queueStatus = 'operational';
+    try {
+      await Task.findOne().select('_id').lean();
+    } catch (e) {
+      queueStatus = 'offline';
+    }
 
     res.json({
       ok: true,
       stats: {
         workflows: workflowCount,
-        tasks: taskCount,
-        runningTasks: runningTaskCount,
-        agents: activeAgentCount,
-        schedules: activeScheduleCount,
-      },
+        workflowTrend: recentWorkflows,
+        tasks: {
+          total: taskCount,
+          completed: completedTasks,
+          failed: failedTasks,
+          running: runningTasks,
+          pending: pendingTasks
+        },
+        agents: {
+          total: totalAgents,
+          active: activeAgents
+        },
+        schedules: {
+          enabled: enabledSchedules,
+          disabled: disabledSchedules
+        },
+        health: {
+          api: 'operational',
+          database: dbStatus,
+          queue: queueStatus,
+          storage: storageStatus,
+          workers: activeWorkers > 0 ? 'operational' : 'offline'
+        }
+      }
     });
   } catch (err) {
-    console.error('dashboard stats error', err);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
-/**
- * Helper to calculate local midnight of the given date in target timezone,
- * and return it as a UTC Date object.
- */
 function getLocalStartOfDay(date, tz) {
   try {
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -84,35 +134,22 @@ function getLocalStartOfDay(date, tz) {
     const offsetMs = formattedDateInTZ.getTime() - utcMidnight.getTime();
     return new Date(utcMidnight.getTime() - offsetMs);
   } catch (err) {
-    console.warn(`Timezone formatting failed for ${tz}, falling back to UTC`, err);
     const fallback = new Date(date);
     fallback.setUTCHours(0, 0, 0, 0);
     return fallback;
   }
 }
 
-/**
- * GET /api/dashboard/execution-trend
- *
- * Returns per-day execution counts for the last 7 days plus an overall
- * summary (total runs, success rate, average duration).
- *
- * Supports timezone-aware grouping via tz query parameter.
- * Always returns exactly 7 data points — days with no executions are
- * filled with zeroes so the chart X-axis is stable.
- */
 async function getExecutionTrend(req, res) {
   try {
     const userId = req.user._id;
     const tz = req.query.tz || 'UTC';
 
-    // ── 1. Build the 7-day date window (target local midnight boundaries) ──
     const now = new Date();
     const localStartToday = getLocalStartOfDay(now, tz);
     const sevenDaysAgo = new Date(localStartToday);
     sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
-    // ── 2. Aggregate: group tasks by calendar date in local timezone ──────
     const rows = await Task.aggregate([
       {
         $match: {
@@ -132,7 +169,6 @@ async function getExecutionTrend(req, res) {
           failed: {
             $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
           },
-          // Sum of (completedAt - startedAt) for tasks that have both timestamps
           totalDurationMs: {
             $sum: {
               $cond: [
@@ -142,7 +178,6 @@ async function getExecutionTrend(req, res) {
               ],
             },
           },
-          // Count tasks that contributed a duration so we can compute the average
           withDuration: {
             $sum: {
               $cond: [
@@ -157,23 +192,19 @@ async function getExecutionTrend(req, res) {
       { $sort: { _id: 1 } },
     ]);
 
-    // ── 3. Index DB results by date string for O(1) lookup ─────────────────
     const byDate = {};
     for (const row of rows) {
       byDate[row._id] = row;
     }
 
-    // ── 4. Build a complete 7-point array (fill missing days with zeros) ───
     const trend = [];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(sevenDaysAgo);
       d.setUTCDate(d.getUTCDate() + i);
 
-      // Add a safe 2-hour offset to avoid boundary float/rounding anomalies during formatting
       const formatTime = new Date(d.getTime() + 1000 * 60 * 60 * 2);
 
-      // Format as "YYYY-MM-DD" and get the weekday name in the target timezone
       const options = { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' };
       const formatter = new Intl.DateTimeFormat('en-US', options);
       const parts = formatter.formatToParts(formatTime);
@@ -193,8 +224,8 @@ async function getExecutionTrend(req, res) {
       const withDuration = row ? row.withDuration : 0;
 
       trend.push({
-        date: label, // e.g. "Mon" — used as X-axis label
-        dateKey, // "2025-07-04" — useful for tooltip display
+        date: label,
+        dateKey,
         executions: total,
         success: completed,
         failed,
@@ -202,7 +233,6 @@ async function getExecutionTrend(req, res) {
       });
     }
 
-    // ── 5. Compute overall summary across all 7 days ───────────────────────
     const totalRuns = trend.reduce((s, d) => s + d.executions, 0);
     const totalCompleted = trend.reduce((s, d) => s + d.success, 0);
     const totalDuration = rows.reduce((s, r) => s + r.totalDurationMs, 0);
@@ -216,7 +246,6 @@ async function getExecutionTrend(req, res) {
 
     res.json({ ok: true, trend, summary });
   } catch (err) {
-    console.error('dashboard execution trend error', err);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
@@ -235,7 +264,6 @@ async function getLiveWorkflowStatus(req, res) {
       failed,
     });
   } catch (err) {
-    console.error('live status error', err);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 }

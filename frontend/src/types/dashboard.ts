@@ -36,7 +36,41 @@ export type ExecutionTrendSummary = {
  */
 export type ExecutionTrendResponse = {
   ok: boolean;
-  /** Exactly 7 data points, one per day (oldest → today) */
   trend: ExecutionTrendPoint[];
   summary: ExecutionTrendSummary;
+};
+
+export type SystemHealth = {
+  api: 'operational' | 'degraded' | 'offline';
+  database: 'operational' | 'degraded' | 'offline';
+  queue: 'operational' | 'degraded' | 'offline';
+  storage: 'operational' | 'degraded' | 'offline';
+  workers: 'operational' | 'degraded' | 'offline';
+};
+
+export type TaskStats = {
+  total: number;
+  completed: number;
+  failed: number;
+  running: number;
+  pending: number;
+};
+
+export type AgentStats = {
+  total: number;
+  active: number;
+};
+
+export type ScheduleStats = {
+  enabled: number;
+  disabled: number;
+};
+
+export type DashboardStats = {
+  workflows: number;
+  workflowTrend?: number;
+  tasks: TaskStats;
+  agents: AgentStats;
+  schedules: ScheduleStats;
+  health: SystemHealth;
 };

@@ -36,20 +36,12 @@ import { cn } from '@/lib/utils';
 import { AnalyticsSection } from '@/components/dashboard/analytics-section';
 import { KPIBar } from '@/components/dashboard/kpi-bar';
 import { TokenUsageCard } from '@/components/dashboard/token-usage-card';
-import type { ExecutionTrendResponse } from '@/types/dashboard';
+import type { ExecutionTrendResponse, DashboardStats } from '@/types/dashboard';
 import { WorkflowsStatusCard } from '@/components/dashboard/workflows-status-card';
 
 /* -----------------------------
    Types
 ------------------------------ */
-
-type DashboardStats = {
-  workflows: number;
-  tasks: number;
-  runningTasks: number;
-  agents: number;
-  schedules: number;
-};
 
 type Task = {
   _id: string;
@@ -83,7 +75,7 @@ function DashboardPageInner() {
     return () => clearTimeout(timer);
   }, []);
 
-  const { data: stats, loading: statsLoading } = useApi<DashboardStats>('/dashboard/stats');
+  const { data: stats, loading: statsLoading, refetch: refetchStats } = useApi<DashboardStats>('/dashboard/stats');
   const { data: tasks, loading: tasksLoading } = useApi<Task[]>('/tasks');
   const { data: workflowsResponse, loading: workflowsLoading } = useApi<any>('/workflows');
   const userTimezone = typeof window !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
@@ -94,13 +86,14 @@ function DashboardPageInner() {
     refetch: refetchTrend,
   } = useApi<ExecutionTrendResponse>(`/dashboard/execution-trend?tz=${encodeURIComponent(userTimezone)}`);
 
-  // Auto-refresh execution trend every 30 seconds
+  // Auto-refresh execution trend and stats every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       refetchTrend();
+      refetchStats();
     }, 30_000);
     return () => clearInterval(interval);
-  }, [refetchTrend]);
+  }, [refetchTrend, refetchStats]);
 
   // Safely extract arrays from backend payload
   const workflowsArray = Array.isArray(workflowsResponse)
@@ -117,7 +110,13 @@ function DashboardPageInner() {
 
     setContext({
       page: 'dashboard',
-      dashboardStats: stats,
+      dashboardStats: {
+        workflows: stats.workflows,
+        tasks: stats.tasks?.total ?? 0,
+        runningTasks: stats.tasks?.running ?? 0,
+        agents: stats.agents?.total ?? 0,
+        schedules: stats.schedules?.enabled ?? 0,
+      },
       recentActivity: recentTasks.slice(0, 5).map((task) => ({
         type: 'task',
         name: task.name,
@@ -208,10 +207,10 @@ function DashboardPageInner() {
   const statsUI = useMemo(
     () => [
       { label: 'Total Workflows', value: stats?.workflows ?? 0, icon: Workflow },
-      { label: 'Total Tasks', value: stats?.tasks ?? 0, icon: ListChecks },
-      { label: 'Running Tasks', value: stats?.runningTasks ?? 0, icon: Activity },
-      { label: 'Active Agents', value: stats?.agents ?? 0, icon: Bot },
-      { label: 'Schedules', value: stats?.schedules ?? 0, icon: Calendar },
+      { label: 'Total Tasks', value: stats?.tasks?.total ?? 0, icon: ListChecks },
+      { label: 'Running Tasks', value: stats?.tasks?.running ?? 0, icon: Activity },
+      { label: 'Active Agents', value: stats?.agents?.active ?? 0, icon: Bot },
+      { label: 'Schedules', value: stats?.schedules?.enabled ?? 0, icon: Calendar },
     ],
     [stats]
   );
@@ -226,7 +225,7 @@ function DashboardPageInner() {
       <div className="flex flex-col gap-4 md:gap-5">
         {/* Top Row: Command Center */}
         <div className="w-full">
-          <KPIBar stats={stats} loading={statsLoading} tasks={tasks} />
+          <KPIBar stats={stats} loading={statsLoading} />
         </div>
 
         {/* Middle Section */}

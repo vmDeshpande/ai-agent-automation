@@ -127,7 +127,9 @@ function SidebarContent({
 
         {showLabels && item.statKey && stats?.[item.statKey] !== undefined && (
           <span className="ml-auto text-[10px] font-semibold bg-muted px-1.5 py-0.5 rounded-md text-muted-foreground group-hover:text-foreground transition-colors">
-            {stats[item.statKey]}
+            {typeof stats[item.statKey] === 'object'
+              ? (stats[item.statKey].total ?? stats[item.statKey].enabled)
+              : stats[item.statKey]}
           </span>
         )}
       </Link>

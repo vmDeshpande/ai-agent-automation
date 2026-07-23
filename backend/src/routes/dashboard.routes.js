@@ -8,8 +8,8 @@ const {
 const { globalLimiter, dashboardLimiter } = require('../middleware/rateLimit.middleware');
 
 router.use(auth);
-router.get('/stats', globalLimiter, getDashboardStats);
-router.get('/execution-trend', globalLimiter, getExecutionTrend);
+router.get('/stats', dashboardLimiter, getDashboardStats);
+router.get('/execution-trend', dashboardLimiter, getExecutionTrend);
 router.get('/live-status', dashboardLimiter, getLiveWorkflowStatus);
 
 module.exports = router;

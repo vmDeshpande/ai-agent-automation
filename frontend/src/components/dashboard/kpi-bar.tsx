@@ -2,29 +2,35 @@ import React from "react";
 import { Card } from "@/components/ui/card";
 import { Workflow, ListChecks, Activity, Bot, Calendar, Database, Server, HardDrive, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { DashboardStats } from "@/types/dashboard";
 
 interface KPIBarProps {
-  stats: any;
+  stats: DashboardStats | null;
   loading: boolean;
-  tasks?: any[] | null;
 }
 
-export function KPIBar({ stats, loading, tasks }: KPIBarProps) {
+export function KPIBar({ stats, loading }: KPIBarProps) {
   const kpis = [
     { id: "workflows", label: "Workflows", value: stats?.workflows ?? 0, icon: Workflow },
-    { id: "tasks", label: "Tasks", value: stats?.tasks ?? 0, icon: ListChecks },
-    { id: "running", label: "Running", value: stats?.runningTasks ?? 0, icon: Activity, highlighted: true },
-    { id: "agents", label: "Agents", value: stats?.agents ?? 0, icon: Bot },
-    { id: "schedules", label: "Scheduled", value: stats?.schedules ?? 0, icon: Calendar },
+    { id: "tasks", label: "Tasks", value: stats?.tasks?.total ?? 0, icon: ListChecks },
+    { id: "running", label: "Running", value: stats?.tasks?.running ?? 0, icon: Activity, highlighted: true },
+    { id: "agents", label: "Agents", value: stats?.agents?.total ?? 0, icon: Bot },
+    { id: "schedules", label: "Scheduled", value: stats?.schedules?.enabled ?? 0, icon: Calendar },
   ];
 
   const systems = [
-    { name: "API", status: "operational", icon: Server },
-    { name: "Database", status: "operational", icon: Database },
-    { name: "Queue", status: "operational", icon: ListChecks },
-    { name: "Storage", status: "operational", icon: HardDrive },
-    { name: "Workers", status: "operational", icon: Box },
+    { name: "API", status: stats?.health?.api || "offline", icon: Server },
+    { name: "Database", status: stats?.health?.database || "offline", icon: Database },
+    { name: "Queue", status: stats?.health?.queue || "offline", icon: ListChecks },
+    { name: "Storage", status: stats?.health?.storage || "offline", icon: HardDrive },
+    { name: "Workers", status: stats?.health?.workers || "offline", icon: Box },
   ];
+
+  const getHealthColor = (status: string) => {
+    if (status === "operational") return "bg-emerald-500/80";
+    if (status === "degraded") return "bg-amber-500/80";
+    return "bg-destructive/80";
+  };
 
   return (
     <Card className="flex flex-col border-border/15 bg-card/20 shadow-sm rounded-xl w-full">
@@ -52,18 +58,18 @@ export function KPIBar({ stats, loading, tasks }: KPIBarProps) {
                    kpi.highlighted ? "pl-3" : "pl-6"
                  )}>
                    {kpi.id === "workflows" && (
-                     <span className="text-[11px] font-medium tracking-wider text-muted-foreground/40">
-                       No trend data
+                     <span className="text-[11px] font-medium tracking-wider text-emerald-500/90">
+                       +{stats?.workflowTrend ?? 0} this week
                      </span>
                    )}
                    
                    {kpi.id === "tasks" && (
-                     tasks && tasks.length > 0 ? (
+                     stats?.tasks && stats.tasks.total > 0 ? (
                        <div className="flex flex-col gap-1 w-20 ml-0.5">
                          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/30">
-                           <div className="bg-emerald-500" style={{ width: `${(tasks.filter(t => t.status === "completed").length / tasks.length) * 100}%` }} title="Completed" />
-                           <div className="bg-amber-500" style={{ width: `${(tasks.filter(t => t.status === "running").length / tasks.length) * 100}%` }} title="Running" />
-                           <div className="bg-destructive" style={{ width: `${(tasks.filter(t => t.status === "failed").length / tasks.length) * 100}%` }} title="Failed" />
+                           <div className="bg-emerald-500" style={{ width: `${(stats.tasks.completed / stats.tasks.total) * 100}%` }} title="Completed" />
+                           <div className="bg-amber-500" style={{ width: `${(stats.tasks.running / stats.tasks.total) * 100}%` }} title="Running" />
+                           <div className="bg-destructive" style={{ width: `${(stats.tasks.failed / stats.tasks.total) * 100}%` }} title="Failed" />
                          </div>
                        </div>
                      ) : (
@@ -95,26 +101,26 @@ export function KPIBar({ stats, loading, tasks }: KPIBarProps) {
                    )}
                    
                    {kpi.id === "agents" && (
-                     kpi.value > 0 ? (
+                     stats?.agents && stats.agents.total > 0 ? (
                        <div className="flex items-center gap-1.5 ml-0.5">
                          <div className="flex h-1.5 w-12 overflow-hidden rounded-full bg-muted/30">
-                           <div className="bg-emerald-500 w-full" />
+                           <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${(stats.agents.active / stats.agents.total) * 100}%` }} />
                          </div>
-                         <span className="text-[10px] text-emerald-500/90 font-medium">100%</span>
+                         <span className="text-[10px] text-emerald-500/90 font-medium">{Math.round((stats.agents.active / stats.agents.total) * 100)}% active</span>
                        </div>
                      ) : (
                        <span className="text-[11px] font-medium tracking-wider text-muted-foreground/40">
-                         No health data
+                         No agents found
                        </span>
                      )
                    )}
                    
                    {kpi.id === "schedules" && (
-                     kpi.value > 0 ? (
+                     stats?.schedules && (stats.schedules.enabled > 0 || stats.schedules.disabled > 0) ? (
                        <>
-                         <div className="size-1.5 rounded-full bg-emerald-500" />
-                         <span className="text-[11px] font-medium tracking-wider text-emerald-500/90">
-                           Active
+                         <div className={cn("size-1.5 rounded-full", stats.schedules.enabled > 0 ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+                         <span className={cn("text-[11px] font-medium tracking-wider", stats.schedules.enabled > 0 ? "text-emerald-500/90" : "text-muted-foreground/70")}>
+                           {stats.schedules.enabled} Active / {stats.schedules.disabled} Disabled
                          </span>
                        </>
                      ) : (
@@ -126,7 +132,6 @@ export function KPIBar({ stats, loading, tasks }: KPIBarProps) {
                 </div>
               </div>
               
-              {/* The dot separator */}
               {i < kpis.length - 1 && (
                 <div className="flex items-center justify-center shrink-0">
                   <div className="size-[3px] rounded-full bg-border/40" />
@@ -137,16 +142,15 @@ export function KPIBar({ stats, loading, tasks }: KPIBarProps) {
         </div>
       </div>
 
-      {/* System Checks Footer */}
       <div className="px-4 md:px-6 py-3 border-t border-border/10 bg-muted/5">
         <div className="flex flex-wrap items-center gap-4 md:gap-6">
           <span className="text-[10px] font-semibold tracking-wider text-muted-foreground/50 uppercase">System Status</span>
           <div className="flex items-center gap-4">
             {systems.map((sys, i) => (
-              <div key={i} className="flex items-center gap-1.5 opacity-60">
+              <div key={i} className="flex items-center gap-1.5 opacity-80" title={sys.status}>
                 <sys.icon className="size-3 text-muted-foreground" />
                 <span className="text-[10px] text-muted-foreground/80 font-medium tracking-wider">{sys.name}</span>
-                <div className="size-1.5 rounded-full bg-emerald-500/80 ml-0.5" />
+                <div className={cn("size-1.5 rounded-full ml-0.5", getHealthColor(sys.status))} />
               </div>
             ))}
           </div>

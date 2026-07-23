@@ -75,4 +75,5 @@ module.exports = {
   authLimiter,
   expensiveLimiter,
   webhookLimiter,
+  dashboardLimiter,
 };
