@@ -74,3 +74,55 @@ export type DashboardStats = {
   schedules: ScheduleStats;
   health: SystemHealth;
 };
+
+/**
+ * Issue #281 — live AI token usage analytics.
+ * Response shape from GET /api/dashboard/token-usage.
+ */
+
+/**
+ * Per-provider per-model breakdown. `lastCallAt` is null until the
+ * first LLM step records usage for this (provider, model) pair.
+ */
+export type TokenUsageModelBreakdown = {
+  model: string;
+  tokens: number;
+  calls: number;
+  lastCallAt: string | null;
+};
+
+/**
+ * Per-provider aggregate. `status`:
+ *   - 'active'    : had an LLM call within the 24h window
+ *   - 'inactive'  : had at least one LLM call but none within 24h
+ *   - 'no_usage'  : no recorded LLM calls for this provider
+ */
+export type TokenUsageProviderEntry = {
+  provider: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  calls: number;
+  status: 'active' | 'inactive' | 'no_usage';
+  lastCallAt: string | null;
+  models: TokenUsageModelBreakdown[];
+};
+
+/**
+ * Full response shape from GET /api/dashboard/token-usage.
+ *
+ * `limit` is `null` until a per-user token quota is configured on the
+ * backend — the frontend treats `null` as "Unlimited" and renders the
+ * progress bar at 0%/inert.
+ */
+export type TokenUsageResponse = {
+  ok: boolean;
+  totalTokens: number;
+  /** null = "Unlimited" — no quota configured yet. */
+  limit: number | null;
+  totalCalls: number;
+  /** Stable order: groq, openai, gemini, ollama, huggingface */
+  providers: TokenUsageProviderEntry[];
+  /** Server-side render timestamp, ISO8601. */
+  lastUpdatedAt: string;
+};

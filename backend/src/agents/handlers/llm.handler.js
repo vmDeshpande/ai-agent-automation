@@ -8,13 +8,14 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   let finalPrompt = prompt;
   let memoryMetrics = null;
 
-  let systemBlock = "";
+  let systemBlock = '';
   if (agent) {
     systemBlock = `You are ${agent.name || 'an AI agent'}.`;
     if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
     if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
     if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
-    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+    if (agent.systemInstructions)
+      systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
   }
 
   if (config.useMemory && agent) {
@@ -75,7 +76,18 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
       raw: llmRes?.raw,
       error: llmRes?.error,
       success: !llmRes?.error,
-      metrics: memoryMetrics,
+      metrics: {
+        ...(memoryMetrics || {}),
+        // Issue #281 — record structured token usage onto the step
+        // result so the dashboard can aggregate across tasks. Falls
+        // back to the agent-configured provider/model (which is what
+        // llmAdapter actually invoked) so provider attribution is
+        // correct even when llmAdapter rewrote the request to a
+        // fallback provider.
+        tokenUsage: llmRes?.tokenUsage || null,
+        provider: llmRes?.provider || agent?.config?.provider || null,
+        model: llmRes?.model || agent?.config?.model || null,
+      },
     });
   }
 
@@ -98,6 +110,14 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
     raw: llmRes?.raw,
     error: llmRes?.error,
     success: !llmRes?.error,
+    metrics: {
+      // Issue #281 — same metrics shape as the memory-enabled branch so
+      // the dashboard aggregation pipeline doesn't need a separate
+      // code path for `useMemory` vs plain LLM steps.
+      tokenUsage: llmRes?.tokenUsage || null,
+      provider: llmRes?.provider || agent?.config?.provider || null,
+      model: llmRes?.model || agent?.config?.model || null,
+    },
   });
 }
 
