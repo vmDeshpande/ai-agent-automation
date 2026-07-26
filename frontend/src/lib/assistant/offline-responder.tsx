@@ -1,18 +1,15 @@
 // /lib/assistant/offline-responder.ts
-import type { AssistantRuntimeContext } from "@/context/assistant-context";
+import type { AssistantRuntimeContext } from '@/context/assistant-context';
 
-export function offlineRespond(
-  message: string,
-  context?: AssistantRuntimeContext | null
-): string {
+export function offlineRespond(message: string, context?: AssistantRuntimeContext | null): string {
   const text = message.toLowerCase();
 
   const hasWorkflow = !!context?.workflowName;
   const hasStep = !!context?.stepType;
 
   /* ================= GREETING ================= */
-  if (text === "hi" || text === "hello" || text.startsWith("hey")) {
-    return `👋 **Hi! I'm your in-app workflow assistant.**
+  if (text === 'hi' || text === 'hello' || text.startsWith('hey')) {
+    return `**Hi! I'm your in-app workflow assistant.**
 
 I can help you with:
 - **Workflows**
@@ -25,11 +22,11 @@ I can help you with:
 
   /* ================= CREATE WORKFLOW ================= */
   if (
-    text.includes("create workflow") ||
-    text.includes("new workflow") ||
-    text.includes("how to create workflow")
+    text.includes('create workflow') ||
+    text.includes('new workflow') ||
+    text.includes('how to create workflow')
   ) {
-    return `### 🛠️ Create a Workflow
+    return `### Create a Workflow
 
 1. Go to the **Dashboard**
 2. Click **Create Workflow**
@@ -41,7 +38,7 @@ Once a workflow is open, I can explain it **step by step**.`;
   }
 
   /* ================= WORKFLOW ================= */
-  if (text.includes("workflow")) {
+  if (text.includes('workflow')) {
     if (!hasWorkflow) {
       return `I don’t know which workflow you’re referring to yet.
 
@@ -61,9 +58,9 @@ Each step performs an action such as:
 
   /* ================= CREATE STEP ================= */
   if (
-    text.includes("create step") ||
-    text.includes("add step") ||
-    text.includes("how to create step")
+    text.includes('create step') ||
+    text.includes('add step') ||
+    text.includes('how to create step')
   ) {
     return `### ➕ Create a Step
 
@@ -81,7 +78,7 @@ Each step performs an action such as:
   }
 
   /* ================= STEP ================= */
-  if (text.includes("step")) {
+  if (text.includes('step')) {
     if (!hasStep) {
       return `I don’t have information about a specific step yet.
 
@@ -94,7 +91,7 @@ Each step performs an action such as:
     return `### 🔹 Selected Step
 
 You’re looking at a **${context.stepType}** step${
-      context.stepName ? ` called **"${context.stepName}"**` : ""
+      context.stepName ? ` called **"${context.stepName}"**` : ''
     }.
 
 This step performs a **${context.stepType}** action.
@@ -106,7 +103,7 @@ Make sure:
   }
 
   /* ================= STATUS ================= */
-  if (text.includes("status")) {
+  if (text.includes('status')) {
     if (!context?.status) {
       return `I don’t have the current execution status yet.
 
@@ -119,9 +116,9 @@ Current workflow status: **${context.status}**.`;
   }
 
   /* ================= ERRORS / FAILURES ================= */
-  if (text.includes("fail") || text.includes("error")) {
+  if (text.includes('fail') || text.includes('error')) {
     if (!hasStep) {
-      return `### ❌ Debugging a Failure
+      return `### Debugging a Failure
 
 If something failed, try this:
 
@@ -132,7 +129,7 @@ If something failed, try this:
 - Ensure API keys are set (required for LLM steps)`;
     }
 
-    return `### ❌ Step Failure Checklist
+    return `### Step Failure Checklist
 
 For this step:
 - Check execution logs
@@ -142,9 +139,9 @@ For this step:
   }
 
   /* ================= LLM / AI ================= */
-  if (text.includes("llm") || text.includes("ai")) {
+  if (text.includes('llm') || text.includes('ai')) {
     if (!hasStep) {
-      return `### 🤖 LLM Steps
+      return `### LLM Steps
 
 LLM steps require:
 - A valid API key
@@ -154,13 +151,13 @@ LLM steps require:
 👉 Click on an **LLM step** to see its configuration.`;
     }
 
-    if (context.stepType !== "LLM") {
+    if (context.stepType !== 'LLM') {
       return `The selected step is **not** an LLM step.
 
 👉 Select an LLM step if you want help with prompts or model configuration.`;
     }
 
-    return `### 🤖 LLM Step Details
+    return `### LLM Step Details
 
 This is an **LLM step**.
 

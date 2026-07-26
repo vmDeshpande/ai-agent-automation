@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AuthenticatedLayout } from "@/components/layout/authenticated-layout";
 import { Card } from "@/components/ui/card";
-import { AuthGuard } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { useAssistantContext } from "@/context/assistant-context";
 import { Button } from "@/components/ui/button";
@@ -106,15 +105,9 @@ export default function WorkflowTasksPage() {
   }
 
   return (
-    <AuthGuard>
-      <div className="flex min-h-screen">
-        <AppSidebar />
-        <main
-          className="flex-1 transition-[padding] duration-300"
-          style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
-        >
-          <div className="p-8 space-y-6">
-            {/* Header */}
+    <AuthenticatedLayout>
+      <div className="space-y-6">
+        {/* Header */}
             <div>
               <h1 className="text-3xl font-bold">Workflow Task History</h1>
               <p className="text-muted-foreground mt-1">
@@ -212,9 +205,7 @@ export default function WorkflowTasksPage() {
                 </PaginationContent>
               </Pagination>
             )}
-          </div>
-        </main>
       </div>
-    </AuthGuard>
+    </AuthenticatedLayout>
   );
 }

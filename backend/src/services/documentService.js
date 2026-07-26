@@ -1,103 +1,186 @@
-const Document = require("../models/document.model");
-const DocumentChunk = require("../models/documentChunk.model");
+const Document = require('../models/document.model');
+const DocumentChunk = require('../models/documentChunk.model');
+const { runEmbedding } = require('../agents/embeddingAdapter');
+const retrievalManager = require('../retrieval');
+const documentAnalyzer = require('../retrieval/analyzers/DocumentAnalyzer');
 
-const { runEmbedding } = require("../agents/embeddingAdapter");
+const STALE_PROCESSING_THRESHOLD_MS = 10 * 60 * 1000;
 
-function chunkText(text, chunkSize = 1200, overlap = 200) {
+// --- Retrieval scalability caps ---
+// Safety bounds for in-memory chunk scoring until a proper vector index / ANN search is introduced.
 
-    const chunks = [];
+function safeProcessingError(error) {
+  if (!error) return 'Document processing failed';
 
-    let start = 0;
+  const message = error instanceof Error ? error.message : String(error);
 
-    while (start < text.length) {
-
-        const end = start + chunkSize;
-
-        const piece = text.slice(start, end).trim();
-
-        if (piece) chunks.push(piece);
-
-        start += chunkSize - overlap;
-    }
-
-    return chunks;
+  return message.slice(0, 500) || 'Document processing failed';
 }
 
-function cosineSimilarity(vecA, vecB) {
+function chunkText(text, chunkSize = 1200, overlap = 200) {
+  const chunks = [];
 
-    if (vecA.length !== vecB.length) return 0;
+  let start = 0;
 
-    let dot = 0, normA = 0, normB = 0;
+  while (start < text.length) {
+    const end = start + chunkSize;
 
-    for (let i = 0; i < vecA.length; i++) {
-        dot += vecA[i] * vecB[i];
-        normA += vecA[i] * vecA[i];
-        normB += vecB[i] * vecB[i];
-    }
+    const piece = text.slice(start, end).trim();
 
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    if (piece) chunks.push(piece);
+
+    start += chunkSize - overlap;
+  }
+
+  return chunks;
 }
 
 async function processDocument(agent, document, text) {
+  try {
+    await Document.findByIdAndUpdate(document._id, {
+      processingStep: 'Chunking',
+    });
 
     const chunks = chunkText(text);
+    // Analyze document structure and metadata for future retrieval strategy selection.
+    const analysis = documentAnalyzer.analyze(document, text, chunks);
+
+    await Document.findByIdAndUpdate(document._id, {
+      $set: {
+        processingStep: 'Embedding chunks',
+        processedChunks: 0,
+        totalChunks: chunks.length,
+        'metadata.analysis': analysis,
+      },
+    });
 
     const records = [];
 
     for (let i = 0; i < chunks.length; i++) {
+      const content = chunks[i];
 
-        const content = chunks[i];
+      const embedding = await runEmbedding(content, agent);
 
-        const embedding = await runEmbedding(content, agent);
+      records.push({
+        documentId: document._id,
+        userId: document.userId,
+        chunkIndex: i,
+        content,
+        embedding,
+      });
 
-        records.push({
-            documentId: document._id,
-            userId: document.userId,
-            chunkIndex: i,
-            content,
-            embedding
-        });
+      await Document.updateOne(
+        {
+          _id: document._id,
+          status: 'processing',
+        },
+        {
+          processedChunks: i + 1,
+        }
+      );
+    }
+
+    const currentDocument = await Document.findById(document._id).select('status').lean();
+
+    if (!currentDocument || currentDocument.status !== 'processing') {
+      throw new Error('Document processing was interrupted');
     }
 
     await DocumentChunk.insertMany(records);
 
-    await Document.findByIdAndUpdate(document._id, {
-        status: "ready",
-        chunkCount: records.length
+    await Document.updateOne(
+      {
+        _id: document._id,
+        status: 'processing',
+      },
+      {
+        $set: {
+          status: 'ready',
+          processingStep: 'Ready',
+          processedAt: new Date(),
+          processedChunks: records.length,
+          totalChunks: records.length,
+          chunkCount: records.length,
+        },
+        $unset: { processingError: '' },
+      }
+    );
+  } catch (error) {
+    await DocumentChunk.deleteMany({
+      documentId: document._id,
     });
+
+    await Document.findByIdAndUpdate(document._id, {
+      status: 'failed',
+      processingStep: 'Failed',
+      processingError: safeProcessingError(error),
+      processedAt: new Date(),
+    });
+
+    throw error;
+  }
 }
 
-async function queryDocument(agent, userId, documentId, query, topK = 3) {
+async function markStaleProcessingDocumentsAsFailed() {
+  const staleBefore = new Date(Date.now() - STALE_PROCESSING_THRESHOLD_MS);
 
-    // Generate embedding for the query
-    const queryEmbedding = await runEmbedding(query, agent);
-
-    // Fetch only the chunks from the specific document
-    const chunks = await DocumentChunk.find({
-        userId,
-        documentId
-    })
-        .select("content embedding") // load only required fields
-        .lean();
-
-    if (!chunks.length) {
-        return [];
+  return Document.updateMany(
+    {
+      status: 'processing',
+      $or: [
+        { processingStartedAt: { $lt: staleBefore } },
+        { processingStartedAt: { $exists: false } },
+      ],
+    },
+    {
+      status: 'failed',
+      processingStep: 'Failed',
+      processingError: 'Processing was interrupted or timed out',
+      processedAt: new Date(),
     }
+  );
+}
 
-    // Compute cosine similarity
-    const scored = chunks.map(chunk => ({
-        ...chunk,
-        score: cosineSimilarity(queryEmbedding, chunk.embedding)
-    }));
+async function queryDocument(
+  agent,
+  userId,
+  documentId,
+  query,
+  topK = 3,
+  strategy = 'auto'
+) {
+  return queryDocuments(
+    agent,
+    userId,
+    [documentId],
+    query,
+    topK,
+    strategy
+  );
+}
 
-    // Sort by similarity score
-    scored.sort((a, b) => b.score - a.score);
-
-    // Return topK results
-    return scored.slice(0, topK);
+async function queryDocuments(
+  agent,
+  userId,
+  documentIds,
+  query,
+  topK = 3,
+  strategy = 'auto'
+) {
+  return retrievalManager.retrieve(
+    agent,
+    userId,
+    documentIds,
+    query,
+    topK,
+    strategy
+  );
 }
 
 module.exports = {
-    processDocument,
-    queryDocument
+  processDocument,
+  queryDocument,
+  queryDocuments,
+  markStaleProcessingDocumentsAsFailed,
+  STALE_PROCESSING_THRESHOLD_MS,
 };

@@ -3,26 +3,33 @@
   "name": "Blog Writer Pipeline",
   "description": "Research a topic and automatically generate a full blog article.",
   "category": "AI Writing",
-  "icon": "✍️",
-  "tags": [
-    "ai",
-    "content",
-    "blog"
-  ],
+  "icon": "✏️",
+  "tags": ["ai", "content", "blog"],
   "steps": [
     {
+      "stepId": "research",
       "name": "Research Topic",
       "type": "llm",
+      "position": { "x": 0, "y": 0 },
       "prompt": "Research the topic: {{input.topic}} and produce key insights, facts, and an outline.",
       "useMemory": false,
       "memoryTopK": 5
     },
     {
+      "stepId": "generate",
       "name": "Generate Blog Article",
       "type": "llm",
+      "position": { "x": 0, "y": 180 },
       "prompt": "Using the following research results, write a structured blog article with introduction, headings, and conclusion:\n\n{{results}}",
       "useMemory": false,
       "memoryTopK": 5
+    }
+  ],
+  "edges": [
+    {
+      "id": "research-to-generate",
+      "source": "research",
+      "target": "generate"
     }
   ]
 }

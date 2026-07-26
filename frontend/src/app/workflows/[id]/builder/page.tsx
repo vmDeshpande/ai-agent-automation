@@ -1,239 +1,98 @@
-"use client";
+'use client';
 
-import { validateGraphIntegrity } from "@/utils/graphValidation";
-import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { AppSidebar } from "@/components/app-sidebar";
-import { Card } from "@/components/ui/card";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { useAssistantContext } from "@/context/assistant-context";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import VisualBuilder from "@/components/workflow/visual-builder";
-import { Textarea } from "@/components/ui/textarea";
-import { useEffect } from "react";
-import { Save, Play, Plus, Trash2, AlertTriangle, Download } from "lucide-react";
-import { generateNodeId } from "@/utils/ids"; // ✅ Using centralized ID system
+import { validateGraph } from '@/utils/graphValidation';
+import { useParams, useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { AuthenticatedLayout } from '@/components/layout/authenticated-layout';
+import { Card } from '@/components/ui/card';
+import { useAssistantContext } from '@/context/assistant-context';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import VisualBuilder from '@/components/workflow/visual-builder';
+import { ReactFlowProvider } from 'reactflow';
+import { Textarea } from '@/components/ui/textarea';
+import { FieldRenderer } from '@/components/workflow/field-renderer';
+import { NodeDefinition } from '@/types/workflow';
+import { useEffect } from 'react';
+import { Save, Play, Plus, Trash2, AlertTriangle, Download } from 'lucide-react';
+import { generateNodeId } from '@/utils/ids'; // ✅ Using centralized ID system
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { AnimatePresence, motion } from "framer-motion";
-import { useToast } from "@/hooks/use-toast";
-import { apiUrl } from "@/lib/api";
+} from '@/components/ui/select';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
 
 /* ---------------- TYPES ---------------- */
 
-type StepType =
-  | "LLM"
-  | "HTTP"
-  | "Delay"
-  | "Tool"
-  | "MCP"
-  | "Document"
-  | "Condition"
-  | "Switch"
-  | "GitHub"
-  | "Slack"
-  | "Discord";
-type ToolType = "email" | "file" | "browser";
-
-type WorkflowStep = {
-  id: string;
-  type: StepType;
-  name: string;
-
-  position?: {
-    x: number;
-    y: number;
-  };
-
-  // LLM
-  useMemory?: boolean;
-  memoryTopK?: number;
-  prompt?: string;
-
-  // HTTP
-  url?: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  body?: string;
-
-  // Delay
-  delay?: number;
-
-  // 🔥 Tool
-  tool?: ToolType;
-
-  // Email
-  to?: string;
-  subject?: string;
-  text?: string;
-  html?: string;
-
-  // File
-  action?: string;
-  path?: string;
-  content?: string;
-
-  // Browser
-  code?: string;
-
-  // MCP
-  serverId?: string;
-  toolName?: string;
-  arguments?: string;
-  timeoutMs?: number;
-
-  // Document RAG
-  documentId?: string;
-  query?: string;
-  topK?: number;
-
-  // CONDITION (NEW SYSTEM)
-  conditionType?: "boolean" | "sentiment" | "contains";
-  operator?: string;
-  value?: string;
-
-  trueTarget?: string;
-  falseTarget?: string;
-
-  // GitHub
-  owner?: string;
-  repo?: string;
-  issue_number?: string;
-  comment?: string;
-  title?: string;
-
-  // SWITCH
-  cases?: {
-    value: string; // what to match
-    target: string; // stepId
-  }[];
-
-  defaultTarget?: string;
-};
-
-type BackendStep = {
-  name: string;
-  stepId: string;
-  type:
-    | "LLM"
-    | "HTTP"
-    | "Delay"
-    | "Tool"
-    | "llm"
-    | "http"
-    | "delay"
-    | "mcp"
-    | "condition"
-    | "switch"
-    | "document_query"
-    | "file"
-    | "email"
-    | "browser"
-    | "github"
-    | "slack"
-    | "discord";
-
-  prompt?: string;
-
-  url?: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
-  body?: string;
-
-  seconds?: number;
-};
-
-type WorkflowResponse = {
-  _id: string;
-  name: string;
-  metadata?: {
-    steps?: BackendStep[];
-    edges?: any[];
-  };
-};
+import type {
+  StepType,
+  ToolType,
+  WorkflowNode as WorkflowStep,
+  WorkflowPayload as WorkflowResponse,
+  WorkflowEdge,
+  WorkflowDocument,
+  McpTool,
+} from '@/types/workflow';
+import { BackendStep } from '@/types/workflow';
 
 /* ---------------- UTILS ---------------- */
 
-function getTypeColor(type: StepType) {
-  switch (type) {
-    case "LLM":
-      return "bg-primary/20 text-primary border-primary/30";
-    case "HTTP":
-      return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-    case "Delay":
-      return "bg-purple-500/20 text-purple-400 border-purple-500/30";
-    case "Tool":
-      return "bg-green-500/20 text-green-400 border-green-500/30";
-    case "MCP":
-      return "bg-teal-500/20 text-teal-400 border-teal-500/30";
-    case "Document":
-      return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+function getTypeColor(type: string) {
+  switch (type.toUpperCase()) {
+    case 'LLM':
+      return 'bg-primary/20 text-primary border-primary/30';
+    case 'HTTP':
+      return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    case 'DELAY':
+      return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+    case 'MCP':
+      return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+    case 'DOCUMENT':
+    case 'DOCUMENT_QUERY':
+      return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    case 'CONDITION':
+    case 'SWITCH':
+      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    case 'PARALLEL':
+    case 'JOIN':
+      return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
     default:
-      return "bg-muted text-muted-foreground";
+      // All dynamically discovered tool nodes get a consistent green badge
+      return 'bg-green-500/20 text-green-400 border-green-500/30';
   }
 }
 
-function summarizeStep(step: WorkflowStep) {
-  switch (step.type) {
-    case "LLM":
-      return step.prompt
-        ? `Prompt: ${step.prompt.slice(0, 120)}${
-            step.prompt.length > 120 ? "…" : ""
-          }`
-        : "No prompt configured";
+/**
+ * Schema-driven step summary. Uses nodeDefinitions to find the first non-empty
+ * field value as the summary label. Falls back to the type name if nothing is configured.
+ */
+function summarizeStep(step: WorkflowStep, nodeDefinitions: NodeDefinition[] = []): string {
+  const lowerType = (step.type || '').toLowerCase();
+  const def = nodeDefinitions.find((d) => d.id.toLowerCase() === lowerType);
 
-    case "HTTP": {
-      const method = step.method ?? "GET";
-      const url = step.url?.trim() || "❌ not set";
-      const body = step.body?.trim();
-      let bodyStatus = "none";
-
-      if (body) {
-        try {
-          JSON.parse(body);
-          bodyStatus = "valid JSON";
-        } catch {
-          bodyStatus = "invalid JSON";
-        }
+  if (def && def.fields.length > 0) {
+    const parts: string[] = [];
+    for (const field of def.fields) {
+      const val = step.config?.[field.name] ?? step[field.name];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        const display = String(val).slice(0, 80);
+        parts.push(`${field.label}: ${display}${display.length < String(val).length ? '…' : ''}`);
+        // Show up to 2 field previews
+        if (parts.length >= 2) break;
       }
-      return [`Method: ${method}`, `URL: ${url}`, `Body: ${bodyStatus}`].join(" | ");
     }
-
-    case "Delay":
-      return `Delay for ${step.delay ?? 0} seconds`;
-
-    case "Document":
-      return step.query
-        ? `Query: ${step.query.slice(0, 120)}${
-            step.query.length > 120 ? "…" : ""
-          }`
-        : "No query configured";
-
-    case "MCP":
-      return `MCP → ${step.serverId || "no server"} / ${step.toolName || "no tool"}`;
-
-    case "Tool": {
-      if (!step.tool) return "Tool not selected";
-      if (step.tool === "email") {
-        return `Email → ${step.to || "❌ no recipient"} | Subject: ${step.subject || "no subject"}`;
-      }
-      if (step.tool === "file") {
-        return `File ${step.action || "action"} | Path: ${step.path || "❌ path not set"}`;
-      }
-      if (step.tool === "browser") {
-        return `Browser ${step.action || "action"} | URL: ${step.url || "❌ url not set"}`;
-      }
-      return "Tool execution step";
-    }
-    default:
-      return "Unknown step";
+    return parts.length > 0 ? parts.join(' | ') : `${def.name} — not configured`;
   }
+
+  // Fallback for types not yet in nodeDefinitions
+  return `${step.type} step`;
 }
 
 export default function WorkflowBuilderPage() {
@@ -242,20 +101,23 @@ export default function WorkflowBuilderPage() {
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [workflowName, setWorkflowName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [mcpTools, setMcpTools] = useState<any[]>([]);
-  const [builderMode, setBuilderMode] = useState<"list" | "visual">("list");
+  const [documents, setDocuments] = useState<WorkflowDocument[]>([]);
+  const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [nodeDefinitions, setNodeDefinitions] = useState<NodeDefinition[]>([]);
+  const [builderMode, setBuilderMode] = useState<'list' | 'visual'>('list');
   const { addToast } = useToast();
-  const [edges, setEdges] = useState<any[]>([]);
+  const [edges, setEdges] = useState<WorkflowEdge[]>([]);
   const { setContext, clearContext } = useAssistantContext();
-  const [savedStepsSnapshot, setSavedStepsSnapshot] = useState<string>("[]");
-  const [savedEdgesSnapshot, setSavedEdgesSnapshot] = useState<string>("[]");
+  const [savedStepsSnapshot, setSavedStepsSnapshot] = useState<string>('[]');
+  const [savedEdgesSnapshot, setSavedEdgesSnapshot] = useState<string>('[]');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [invalidNodeIds, setInvalidNodeIds] = useState<string[]>([]);
-  const [stepSearch, setStepSearch] = useState("");
-  const hasUnsavedChanges = 
-    JSON.stringify(steps) !== savedStepsSnapshot || 
-    JSON.stringify(edges) !== savedEdgesSnapshot;
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+
+  const hasUnsavedChanges =
+    JSON.stringify(steps) !== savedStepsSnapshot || JSON.stringify(edges) !== savedEdgesSnapshot;
 
   useEffect(() => {
     if (steps.length === 0) {
@@ -263,27 +125,28 @@ export default function WorkflowBuilderPage() {
       setInvalidNodeIds([]);
       return;
     }
-    const validation = validateGraphIntegrity(steps, edges);
+    // Pass nodeDefinitions for schema-driven required field validation
+    const validation = validateGraph(steps, edges, nodeDefinitions);
     setValidationErrors(validation.errors);
     setInvalidNodeIds(validation.invalidNodeIds);
-  }, [steps, edges]);
+  }, [steps, edges, nodeDefinitions]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
         e.preventDefault();
-        e.returnValue = "";
+        e.returnValue = '';
       }
     };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
   async function fetchWorkflow() {
     try {
       const res = await fetch(apiUrl(`/workflows/${id}`), {
         headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
       });
 
@@ -294,90 +157,73 @@ export default function WorkflowBuilderPage() {
       setWorkflowName(workflow.name);
 
       const backendSteps = workflow.metadata?.steps ?? [];
-      const backendEdges = (workflow.metadata?.edges ?? []).map((e: any) => ({
-        ...e,
-        id: e.id || generateNodeId("edge"), // ✅ Safe parsing fallback
-        label: e.label || e.caseValue || e.condition?.toUpperCase() || "",
-      }));
+      const backendEdges = (workflow.metadata?.edges ?? []).map((e: any) => {
+        let sourceHandle: string | undefined;
+        if (e.condition === 'true' || e.condition === 'false') {
+          sourceHandle = e.condition;
+        } else if (e.caseValue) {
+          sourceHandle = e.caseValue;
+        }
+        return {
+          ...e,
+          id: e.id || generateNodeId('edge'),
+          label: e.label || e.caseValue || e.condition?.toUpperCase() || '',
+          animated: true,
+          style: { strokeWidth: 2 },
+          sourceHandle,
+          labelStyle: { fill: 'var(--foreground)', fontSize: 12, fontWeight: 500 },
+          labelBgStyle: { fill: 'var(--card)', fillOpacity: 0.9 },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
+        };
+      });
       setEdges(backendEdges);
       setSavedEdgesSnapshot(JSON.stringify(backendEdges));
 
-      const normalizedSteps: WorkflowStep[] = backendSteps.map((s) => ({
-        id: s.stepId,
-        name: s.name,
-          type:
-          s.type === "delay"
-            ? "Delay"
-            : s.type === "http"
-              ? "HTTP"
-              : s.type === "condition"
-                ? "Condition"
-                : s.type === "switch"
-                  ? "Switch"
-                  : s.type === "document_query"
-                    ? "Document"
-                    : s.type === "mcp"
-                      ? "MCP"
-                    : s.type === "github"
-                      ? "GitHub"
-                      : s.type === "slack"
-                        ? "Slack"
-                        : s.type === "discord"
-                          ? "Discord"
-                          : s.type === "file" ||
-                              s.type === "email" ||
-                              s.type === "browser"
-                            ? "Tool"
-                            : "LLM",
+      const normalizedSteps: WorkflowStep[] = backendSteps.map((s) => {
+        const config = s.config || {};
+        const baseProps = ['stepId', 'name', 'type', 'position', 'config'];
+        const mergedConfig = { ...config };
+        for (const [key, val] of Object.entries(s)) {
+          if (!baseProps.includes(key) && val !== undefined && val !== null) {
+            mergedConfig[key] = val;
+          }
+        }
 
-        position: (s as any).position || { x: 0, y: 0 },
-        useMemory: (s as any).useMemory ?? false,
-        memoryTopK: (s as any).memoryTopK ?? 5,
-        prompt: s.prompt ?? "",
-        url: s.url ?? "",
-        method: s.method ?? "GET",
-        body: s.body ?? "",
-        delay: s.type === "delay" ? (s.seconds ?? 0) : 0,
-        tool:
-          s.type === "file" || s.type === "email" || s.type === "browser"
-            ? (s.type as ToolType)
-            : undefined,
-        to: (s as any).to ?? "",
-        subject: (s as any).subject ?? "",
-        text: (s as any).text ?? "",
-        html: (s as any).html ?? "",
-        action: (s as any).action ?? "",
-        path: (s as any).path ?? "",
-        content: (s as any).content ?? "",
-        code: (s as any).code ?? "",
-        serverId: (s as any).serverId ?? "",
-        toolName: (s as any).toolName ?? "",
-        arguments:
-          typeof (s as any).arguments === "string"
-            ? (s as any).arguments
-            : JSON.stringify((s as any).arguments ?? {}, null, 2),
-        timeoutMs: (s as any).timeoutMs ?? 30000,
-        documentId: (s as any).documentId ?? "",
-        query: (s as any).query ?? "",
-        topK: (s as any).topK ?? 4,
-        conditionType: (s as any).conditionType ?? "",
-        operator: (s as any).operator ?? "",
-        value: (s as any).value ?? "",
-        trueTarget: (s as any).trueTarget ?? "",
-        falseTarget: (s as any).falseTarget ?? "",
-        cases: (s as any).cases ?? [],
-        defaultTarget: (s as any).defaultTarget ?? "",
-        owner: (s as any).owner ?? "",
-        repo: (s as any).repo ?? "",
-        issue_number: (s as any).issue_number ?? "",
-        comment: (s as any).comment ?? "",
-        title: (s as any).title ?? "",
-      }));
+        let legacyType = s.type;
+        const lowerType = String(s.type || '').toLowerCase();
+        if (lowerType === 'llm') legacyType = 'LLM';
+        else if (lowerType === 'http') legacyType = 'HTTP';
+        else if (lowerType === 'delay') legacyType = 'Delay';
+        else if (lowerType === 'mcp') legacyType = 'MCP';
+        else if (lowerType === 'document_query') legacyType = 'Document';
+        else if (lowerType === 'condition') legacyType = 'Condition';
+        else if (lowerType === 'switch') legacyType = 'Switch';
+        else if (lowerType === 'parallel') legacyType = 'Parallel';
+        else if (lowerType === 'join') legacyType = 'Join';
+        else if (lowerType === 'approval') legacyType = 'Approval';
+        else if (lowerType === 'file' || lowerType === 'email' || lowerType === 'browser') legacyType = 'Tool';
+        else {
+          const matchingDef = nodeDefinitions?.find(d => d.id.toLowerCase() === lowerType);
+          if (matchingDef) {
+            legacyType = matchingDef.id;
+          }
+        }
+
+        return {
+          ...s,
+          id: s.stepId,
+          name: s.name,
+          type: legacyType,
+          position: s.position || { x: 0, y: 0 },
+          config: mergedConfig,
+        };
+      });
 
       setSteps(normalizedSteps);
       setSavedStepsSnapshot(JSON.stringify(normalizedSteps));
     } catch (err) {
-      console.error("Failed to load workflow", err);
+      console.error('Failed to load workflow', err);
     } finally {
       setLoading(false);
     }
@@ -391,37 +237,29 @@ export default function WorkflowBuilderPage() {
     if (!id) return;
 
     setContext({
-      page: "workflow-builder",
+      page: 'workflow-builder',
       workflowId: id,
       workflowName: workflowName ?? undefined,
-      status: "editing",
-      builderSteps: steps
-        .filter(
-          (s) =>
-            s.type === "LLM" ||
-            s.type === "HTTP" ||
-            s.type === "Tool" ||
-            s.type === "Delay",
-        )
-        .map((s) => ({
-          id: s.id,
-          name: s.name,
-          type: s.type as "LLM" | "HTTP" | "Tool" | "Delay",
-          summary: summarizeStep(s),
-        })),
+      status: 'editing',
+      builderSteps: steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        type: s.type as any,
+        summary: summarizeStep(s, nodeDefinitions),
+      })),
     });
 
     return () => {
       clearContext();
     };
-  }, [id, workflowName, steps.length]);
+  }, [id, workflowName, steps.length, nodeDefinitions]);
 
   useEffect(() => {
     async function fetchDocs() {
       try {
-        const res = await fetch(apiUrl("/documents"), {
+        const res = await fetch(apiUrl('/documents'), {
           headers: {
-            Authorization: "Bearer " + localStorage.getItem("token"),
+            Authorization: 'Bearer ' + localStorage.getItem('token'),
           },
         });
         const data = await res.json();
@@ -429,18 +267,37 @@ export default function WorkflowBuilderPage() {
           setDocuments(data.documents || []);
         }
       } catch (err) {
-        console.error("Failed to fetch documents", err);
+        console.error('Failed to fetch documents', err);
       }
     }
     fetchDocs();
   }, []);
 
   useEffect(() => {
+    async function fetchNodeDefs() {
+      try {
+        const res = await fetch(apiUrl('/workflows/node-definitions'), {
+          headers: {
+            Authorization: 'Bearer ' + localStorage.getItem('token'),
+          },
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setNodeDefinitions(data.nodeDefinitions || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch node definitions', err);
+      }
+    }
+    fetchNodeDefs();
+  }, []);
+
+  useEffect(() => {
     async function fetchMcpTools() {
       try {
-        const res = await fetch(apiUrl("/mcp/tools"), {
+        const res = await fetch(apiUrl('/mcp/tools'), {
           headers: {
-            Authorization: "Bearer " + localStorage.getItem("token"),
+            Authorization: 'Bearer ' + localStorage.getItem('token'),
           },
         });
         const data = await res.json();
@@ -448,7 +305,7 @@ export default function WorkflowBuilderPage() {
           setMcpTools(data.tools || []);
         }
       } catch (err) {
-        console.error("Failed to fetch MCP tools", err);
+        console.error('Failed to fetch MCP tools', err);
       }
     }
 
@@ -456,13 +313,25 @@ export default function WorkflowBuilderPage() {
   }, []);
 
   function addStep() {
+    // Default to the first available node definition (usually 'llm'), or fall back to 'llm'
+    const defaultType = nodeDefinitions.length > 0 ? nodeDefinitions[0].id : 'llm';
+    const defaultDef = nodeDefinitions[0];
+    // Pre-populate default values from the schema
+    const defaultConfig: Record<string, any> = {};
+    if (defaultDef) {
+      for (const field of defaultDef.fields) {
+        if (field.default !== undefined) {
+          defaultConfig[field.name] = field.default;
+        }
+      }
+    }
     setSteps((prev) => [
       ...prev,
       {
-        id: generateNodeId("LLM"), // ✅ Replaced random string mapping
-        type: "LLM",
-        name: "New Step",
-        prompt: "",
+        id: generateNodeId(defaultType),
+        type: defaultType,
+        name: 'New Step',
+        config: defaultConfig,
       },
     ]);
   }
@@ -471,19 +340,14 @@ export default function WorkflowBuilderPage() {
 
   if (!query) return true;
 
-  return (
-    step.name.toLowerCase().includes(query) ||
-    step.type.toLowerCase().includes(query)
-  );
-});
-  function enrichStepsWithEdges(steps: WorkflowStep[], edges: any[]) {
+  function enrichStepsWithEdges(steps: WorkflowStep[], edges: WorkflowEdge[]) {
     return steps.map((step) => {
-      if (step.type === "Switch") {
+      if (step.type === 'Switch') {
         const outgoing = edges.filter((e) => e.source === step.id);
         const cases = outgoing
           .filter((e) => e.caseValue)
           .map((e) => ({
-            value: e.caseValue,
+            value: e.caseValue!,
             target: e.target,
           }));
 
@@ -494,207 +358,58 @@ export default function WorkflowBuilderPage() {
         };
       }
 
-      if (step.type === "Condition") {
+      if (step.type === 'Condition') {
         return {
           ...step,
-          trueTarget: edges.find((e) => e.source === step.id && e.condition === "true")?.target,
-          falseTarget: edges.find((e) => e.source === step.id && e.condition === "false")?.target,
+          trueTarget: edges.find((e) => e.source === step.id && e.condition === 'true')?.target,
+          falseTarget: edges.find((e) => e.source === step.id && e.condition === 'false')?.target,
         };
       }
       return step;
     });
   }
 
-    async function saveWorkflow(isDraft: boolean = false) {
+  async function saveWorkflow(isDraft: boolean = false) {
     try {
       const enrichedSteps = enrichStepsWithEdges(steps, edges);
 
       const backendSteps = enrichedSteps.map((s) => {
-        if (s.type === "LLM") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "llm",
-            prompt: s.prompt ?? "",
-            useMemory: s.useMemory ?? false,
-            memoryTopK: s.memoryTopK ?? 5,
-          };
-        }
-        if (s.type === "Delay") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "delay",
-            seconds: s.delay ?? 0,
-          };
-        }
-        if (s.type === "HTTP") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "http",
-            method: s.method ?? "GET",
-            url: s.url ?? "",
-            body: s.body ?? "",
-          };
-        }
-        if (s.type === "Document") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "document_query",
-            documentId: s.documentId,
-            query: s.query,
-            topK: s.topK ?? 4,
-          };
-        }
-        if (s.type === "MCP") {
-          let parsedArguments: any = {};
-
-          if ((s.arguments || "").trim()) {
-            try {
-              parsedArguments = JSON.parse(s.arguments || "{}");
-            } catch {
-              parsedArguments = s.arguments || "";
-            }
-          }
-
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "mcp",
-            serverId: s.serverId ?? "",
-            toolName: s.toolName ?? "",
-            arguments: parsedArguments,
-            timeoutMs: s.timeoutMs ?? 30000,
-          };
-        }
-        if (s.type === "Condition") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "condition",
-            conditionType: s.conditionType,
-            operator: s.operator,
-            value: s.value,
-            trueTarget: s.trueTarget,
-            falseTarget: s.falseTarget,
-          };
-        }
-        if (s.type === "Switch") {
-          return {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: "switch",
-          };
-        }
-        if (s.type === "Tool" && s.tool) {
-          const toolType = s.tool.toLowerCase();
-          const base: any = {
-            stepId: s.id,
-            name: s.name,
-            position: s.position,
-            type: toolType,
-          };
-
-          if (toolType === "file") {
-            return {
-              ...base,
-              action: s.action ?? "read",
-              path: s.path ?? "",
-              content: s.content ?? "",
-            };
-          }
-          if (toolType === "email") {
-            return {
-              ...base,
-              to: s.to ?? "",
-              subject: s.subject ?? "",
-              text: s.text ?? "",
-              html: s.html ?? "",
-            };
-          }
-          if (toolType === "browser") {
-            return {
-              ...base,
-              action: s.action ?? "screenshot",
-              url: s.url ?? "",
-              code: s.code ?? "",
-            };
-          }
-          return base;
-        }
-
-          if (s.type === "GitHub") {
-            return {
-              stepId: s.id,
-              name: s.name,
-              position: s.position,
-              type: "github",
-              action: s.action ?? "",
-              owner: (s as any).owner ?? "",
-              repo: (s as any).repo ?? "",
-              title: (s as any).title ?? "",
-              body: s.body ?? "",
-              issue_number: (s as any).issue_number ?? "",
-              comment: (s as any).comment ?? "",
-            };
-          }
-
-          if (s.type === "Slack") {
-            return {
-              stepId: s.id,
-              name: s.name,
-              position: s.position,
-              type: "slack",
-              action: s.action ?? "send_message",
-              text: s.text ?? "",
-            };
-          }
-
-          if (s.type === "Discord") {
-            return {
-              stepId: s.id,
-              name: s.name,
-              position: s.position,
-              type: "discord",
-              action: s.action ?? "send_message",
-              content: s.content ?? "",
-            };
-          }
-    // fallback (should never hit)
-        return {
+        const lowerType = String(s.type || '').toLowerCase();
+        
+        const backendStep: any = {
           stepId: s.id,
           name: s.name,
           position: s.position,
-          type: "unknown" as any,
+          type: lowerType === 'document' ? 'document_query' : lowerType,
+          config: s.config || {},
         };
+
+        if (s.config) {
+          Object.assign(backendStep, s.config);
+        }
+
+        return backendStep;
       });
 
-      const validation = validateGraphIntegrity(enrichedSteps, edges);
+      const validation = validateGraph(enrichedSteps, edges);
       if (!isDraft && !validation.isValid) {
-        console.error("Save workflow blocked due to validation errors:", validation.errors);
+        console.error('Save workflow blocked due to validation errors:', validation.errors);
         addToast({
-          type: "error",
-          title: "Failed to Save Workflow",
-          description: validation.errors[0] || "Your workflow contains orphaned edges or invalid connections. Please resolve them before saving.",
+          type: 'error',
+          title: 'Failed to Save Workflow',
+          description:
+            validation.errors[0] ||
+            'Your workflow contains orphaned edges or invalid connections. Please resolve them before saving.',
         });
         return;
       }
 
       // 🚀 Topology is verified clean - proceed with secure API request
       const res = await fetch(apiUrl(`/workflows/${id}/steps`), {
-        method: "PUT",
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
         body: JSON.stringify({
           steps: backendSteps,
@@ -702,21 +417,21 @@ export default function WorkflowBuilderPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to save workflow");
+      if (!res.ok) throw new Error('Failed to save workflow');
 
       addToast({
-        type: "success",
-        title: "Workflow saved",
-        description: "Your workflow steps were updated successfully",
+        type: 'success',
+        title: 'Workflow saved',
+        description: 'Your workflow steps were updated successfully',
       });
       setSavedStepsSnapshot(JSON.stringify(steps));
       setSavedEdgesSnapshot(JSON.stringify(edges));
     } catch (err) {
-      console.error("Save workflow failed:", err);
+      console.error('Save workflow failed:', err);
       addToast({
-        type: "error",
-        title: "Failed to save workflow",
-        description: "Something went wrong. Try again.",
+        type: 'error',
+        title: 'Failed to save workflow',
+        description: 'Something went wrong. Try again.',
       });
     }
   }
@@ -726,57 +441,144 @@ export default function WorkflowBuilderPage() {
   }
 
   function updateStep(stepId: string, patch: Partial<WorkflowStep>) {
-    setSteps((prev) =>
-      prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)),
-    );
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, ...patch } : s)));
   }
 
   async function handleExport() {
     try {
       const res = await fetch(apiUrl(`/workflows/${id}/export`), {
         headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
       });
-      if (!res.ok) throw new Error("Export failed");
+      if (!res.ok) throw new Error('Export failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
-      a.download = `${workflowName?.replace(/\s+/g, "_") ?? id}.json`;
+      a.download = `${workflowName?.replace(/\s+/g, '_') ?? id}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Export failed:", err);
+      console.error('Export failed:', err);
       addToast({
-        type: "error",
-        title: "Export failed",
-        description: "Could not export workflow. Try again.",
+        type: 'error',
+        title: 'Export failed',
+        description: 'Could not export workflow. Try again.',
       });
+    }
+  }
+  async function generateWithAI(regenerate: boolean = false) {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    try {
+      const body: Record<string, unknown> = { description: aiPrompt };
+      if (regenerate && steps.length > 0) {
+        body.existingGraph = {
+          steps: steps.map((s) => ({
+            stepId: s.id,
+            name: s.name,
+            type: String(s.type).toLowerCase() === 'document' ? 'document_query' : String(s.type).toLowerCase(),
+            config: s.config || {},
+          })),
+          edges: edges.map((e) => ({
+            source: e.source,
+            target: e.target,
+            ...(e.condition ? { condition: e.condition } : {}),
+            ...(e.caseValue ? { caseValue: e.caseValue } : {}),
+          })),
+        };
+      }
+      const res = await fetch(apiUrl('/workflows/generate-ai'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Generation failed');
+
+      const generatedSteps = data.steps.map((s: any) => {
+        let finalType = s.type;
+        let toolName = s.tool || '';
+
+        const lowerType = String(s.type || '').toLowerCase();
+        if (lowerType === 'condition') finalType = 'Condition';
+        else if (lowerType === 'switch') finalType = 'Switch';
+        else if (['email', 'file', 'browser'].includes(lowerType)) {
+          finalType = 'Tool';
+          toolName = lowerType;
+        } else if (lowerType !== 'tool') {
+          const matchingDef = nodeDefinitions.find((d) => d.id.toLowerCase() === lowerType);
+          if (matchingDef) finalType = matchingDef.id;
+        }
+
+        const config = s.config || {};
+        const mergedConfig = { ...config };
+        
+        for (const [key, val] of Object.entries(s)) {
+          if (!['stepId', 'id', 'name', 'type', 'position', 'config'].includes(key) && val !== undefined) {
+            mergedConfig[key] = val;
+          }
+        }
+
+        return {
+          ...s,
+          ...mergedConfig,
+          id: s.stepId || s.id,
+          stepId: s.stepId || s.id,
+          name: s.name,
+          type: finalType,
+          ...(toolName ? { tool: toolName } : {}),
+          ...(mergedConfig.seconds !== undefined ? { delay: mergedConfig.seconds } : {}),
+          position: s.position || { x: Math.random() * 200 + 100, y: Math.random() * 200 + 100 },
+          config: mergedConfig,
+        };
+      });
+
+      const generatedEdges = data.edges.map((e: any) => {
+        let sourceHandle: string | undefined;
+        if (e.condition === 'true' || e.condition === 'false') sourceHandle = e.condition;
+        else if (e.caseValue) sourceHandle = e.caseValue;
+        return {
+          ...e,
+          label: e.label || e.caseValue || (e.condition ? e.condition.toUpperCase() : '') || '',
+          animated: true,
+          style: { strokeWidth: 2 },
+          sourceHandle,
+          labelStyle: { fill: 'var(--foreground)', fontSize: 12, fontWeight: 500 },
+          labelBgStyle: { fill: 'var(--card)', fillOpacity: 0.9 },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
+        };
+      });
+
+      setSteps(generatedSteps);
+      setEdges(generatedEdges);
+      setBuilderMode('visual');
+      addToast({ type: 'success', title: 'Workflow generated', description: 'Review the graph and save when ready.' });
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Generation failed', description: err.message || 'Try again.' });
+    } finally {
+      setAiLoading(false);
     }
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-screen">
-        <AppSidebar />
-        <main className="flex-1 pl-64 p-8">
+      <AuthenticatedLayout layout="full">
+        <div className="p-8">
           <p className="opacity-70">Loading workflow builder…</p>
-        </main>
-      </div>
+        </div>
+      </AuthenticatedLayout>
     );
   }
 
   return (
-    <AuthGuard>
-      <div className="flex min-h-screen">
-        <AppSidebar />
-
-        <main
-          className="flex-1 transition-[padding] duration-300"
-          style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
-        >
-          <div className="p-8">
+    <AuthenticatedLayout layout="full">
+      <div className="p-8">
             {/* Header */}
             <div className="mb-8 flex items-center justify-between">
               <div>
@@ -784,22 +586,20 @@ export default function WorkflowBuilderPage() {
                 <p className="mt-2 text-muted-foreground">
                   Configure workflow steps and execution order
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Workflow ID: {id}
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">Workflow ID: {id}</p>
                 <div className="mt-4 flex gap-2">
                   <Button
-                    variant={builderMode === "list" ? "default" : "outline"}
+                    variant={builderMode === 'list' ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setBuilderMode("list")}
+                    onClick={() => setBuilderMode('list')}
                   >
                     Step Builder
                   </Button>
 
                   <Button
-                    variant={builderMode === "visual" ? "default" : "outline"}
+                    variant={builderMode === 'visual' ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setBuilderMode("visual")}
+                    onClick={() => setBuilderMode('visual')}
                   >
                     Visual Graph
                   </Button>
@@ -826,7 +626,11 @@ export default function WorkflowBuilderPage() {
                   variant="outline"
                   onClick={() => {
                     if (hasUnsavedChanges) {
-                      if (window.confirm("You have unsaved changes. Are you sure you want to leave without saving?")) {
+                      if (
+                        window.confirm(
+                          'You have unsaved changes. Are you sure you want to leave without saving?'
+                        )
+                      ) {
                         router.push(`/workflows/${id}`);
                       }
                     } else {
@@ -836,11 +640,18 @@ export default function WorkflowBuilderPage() {
                 >
                   ← Back to Workflow
                 </Button>
-                <Button variant="outline" onClick={() => saveWorkflow(true)} disabled={!hasUnsavedChanges}>
+                <Button
+                  variant="outline"
+                  onClick={() => saveWorkflow(true)}
+                  disabled={!hasUnsavedChanges}
+                >
                   <Save className="mr-2 size-4" />
                   Save Draft
                 </Button>
-                <Button onClick={() => saveWorkflow(false)} disabled={!hasUnsavedChanges || validationErrors.length > 0}>
+                <Button
+                  onClick={() => saveWorkflow(false)}
+                  disabled={!hasUnsavedChanges || validationErrors.length > 0}
+                >
                   <Play className="mr-2 size-4" />
                   Save Changes
                 </Button>
@@ -848,8 +659,8 @@ export default function WorkflowBuilderPage() {
             </div>
 
             {validationErrors.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }} 
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mb-8 rounded-lg border border-destructive/50 bg-destructive/10 p-5 text-destructive"
               >
@@ -867,85 +678,86 @@ export default function WorkflowBuilderPage() {
                 </p>
               </motion.div>
             )}
+            {/* AI Generation Panel */}
+            <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <button
+                className="flex w-full items-center justify-between text-sm font-semibold text-primary"
+                onClick={() => setAiPanelOpen((v) => !v)}
+              >
+                <span>✨ Generate with AI</span>
+                <span>{aiPanelOpen ? '▲' : '▼'}</span>
+              </button>
+              {aiPanelOpen && (
+                <div className="mt-4 space-y-3">
+                  <Textarea
+                    placeholder="Describe your workflow in plain English… e.g. When a PDF is uploaded, summarize it and email me the result."
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    rows={3}
+                  />
+                  <div className="flex gap-2">
+                    <Button onClick={() => generateWithAI(false)} disabled={aiLoading || !aiPrompt.trim()}>
+                      {aiLoading ? 'Generating…' : 'Generate'}
+                    </Button>
+                    {steps.length > 0 && (
+                      <Button variant="outline" onClick={() => generateWithAI(true)} disabled={aiLoading || !aiPrompt.trim()}>
+                        {aiLoading ? 'Updating…' : 'Regenerate / Refine'}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Generated workflow opens in Visual Graph mode. Review and hit Save Changes when ready.
+                  </p>
+                </div>
+              )}
+            </div>
 
-            {builderMode === "visual" && (
-              <VisualBuilder
-                steps={steps}
-                setSteps={setSteps}
-                edges={edges}
-                onEdgesChange={(updatedEdges) => {
-                  setEdges(updatedEdges);
-                }}
-                onSave={saveWorkflow}
-                invalidNodeIds={invalidNodeIds}
-              />
+            {builderMode === 'visual' && (
+              <ReactFlowProvider>
+                <VisualBuilder
+                  steps={steps}
+                  setSteps={setSteps}
+                  edges={edges}
+                  onEdgesChange={(updatedEdges) => {
+                    setEdges(updatedEdges);
+                  }}
+                  onSave={saveWorkflow}
+                  invalidNodeIds={invalidNodeIds}
+                  nodeDefinitions={nodeDefinitions}
+                />
+              </ReactFlowProvider>
             )}
 
-            {builderMode === "list" && (
-  <div className="mx-auto max-w-3xl space-y-4">
-    <div className="flex items-center gap-2">
-      <Input
-        placeholder="Search steps by name or type..."
-        value={stepSearch}
-        onChange={(e) => setStepSearch(e.target.value)}
-      />
-
-      {stepSearch && (
-        <Button
-          variant="outline"
-          onClick={() => setStepSearch("")}
-        >
-          Clear
-        </Button>
-      )}
-    </div>
-    {filteredSteps.length === 0 && (
-      <Card className="p-6 text-center text-sm text-muted-foreground">
-        No steps found for "{stepSearch}".
-      </Card>
-    )}  
-    <AnimatePresence initial={false}>
-      {filteredSteps.map((step, index) => (
+            {builderMode === 'list' && (
+              <div className="mx-auto max-w-3xl space-y-4">
+                <AnimatePresence initial={false}>
+                  {steps.map((step, index) => (
                     <motion.div
                       key={step.id}
                       layout
                       initial={{ opacity: 0, y: 12, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -12, scale: 0.98 }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
                     >
                       <Card
                         className="p-6 transition-shadow hover:shadow-lg"
                         onClick={() => {
-                          const validStepType = (
-                            ["LLM", "HTTP", "Tool", "Delay"].includes(step.type)
-                              ? step.type
-                              : "LLM"
-                          ) as "LLM" | "HTTP" | "Tool" | "Delay";
-
                           setContext({
-                            page: "workflow-builder",
+                            page: 'workflow-builder',
                             workflowId: id,
                             workflowName: workflowName ?? undefined,
-                            status: "editing",
-                            builderSteps: steps
-                              .filter(
-                                (s) =>
-                                  s.type === "LLM" ||
-                                  s.type === "HTTP" ||
-                                  s.type === "Tool" ||
-                                  s.type === "Delay",
-                              )
-                              .map((s) => ({
-                                id: s.id,
-                                name: s.name,
-                                type: s.type as "LLM" | "HTTP" | "Delay" | "Tool",
-                                summary: summarizeStep(s),
-                              })),
+                            status: 'editing',
+                            builderSteps: steps.map((s) => ({
+                              id: s.id,
+                              name: s.name,
+                              type: s.type as any,
+                              summary: summarizeStep(s, nodeDefinitions),
+                            })),
                             stepId: step.id,
                             stepName: step.name,
-                            stepType: validStepType,
-                            stepDescription: summarizeStep(step),
+                            stepType: step.type as any,
+                            stepDescription: summarizeStep(step, nodeDefinitions),
                           });
                         }}
                       >
@@ -957,10 +769,7 @@ export default function WorkflowBuilderPage() {
                             >
                               {index + 1}
                             </motion.span>
-                            <Badge
-                              variant="outline"
-                              className={getTypeColor(step.type)}
-                            >
+                            <Badge variant="outline" className={getTypeColor(step.type)}>
                               {step.type}
                             </Badge>
                           </div>
@@ -984,26 +793,24 @@ export default function WorkflowBuilderPage() {
                             <Select
                               value={step.type}
                               onValueChange={(v) => {
-                                const patch: Partial<WorkflowStep> = { type: v as StepType };
-                                if (v === "Slack" || v === "Discord") patch.action = "send_message";
-                                updateStep(step.id, patch);
+                                // Pre-populate default values from the new node's schema
+                                const newDef = nodeDefinitions.find((d) => d.id === v);
+                                const newConfig: Record<string, any> = {};
+                                if (newDef) {
+                                  for (const field of newDef.fields) {
+                                    if (field.default !== undefined) newConfig[field.name] = field.default;
+                                  }
+                                }
+                                updateStep(step.id, { type: v as any, config: newConfig });
                               }}
                             >
                               <SelectTrigger className="mt-1.5">
-                                <SelectValue />
+                                <SelectValue placeholder="Select type" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="LLM">LLM</SelectItem>
-                                <SelectItem value="HTTP">HTTP Request</SelectItem>
-                                <SelectItem value="Delay">Delay</SelectItem>
-                                <SelectItem value="Tool">Tool</SelectItem>
-                                <SelectItem value="MCP">MCP</SelectItem>
-                                <SelectItem value="Document">Document Query</SelectItem>
-                                <SelectItem value="Condition">Condition</SelectItem>
-                                <SelectItem value="Switch">Switch</SelectItem>
-                                <SelectItem value="GitHub">GitHub</SelectItem>
-                                <SelectItem value="Slack">Slack</SelectItem>
-                                <SelectItem value="Discord">Discord</SelectItem>
+                                {nodeDefinitions.map(def => (
+                                  <SelectItem key={def.id} value={def.id}>{def.name}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
@@ -1021,624 +828,43 @@ export default function WorkflowBuilderPage() {
                             />
                           </div>
 
-                          {step.type === "Tool" && (
-                            <>
-                              <div>
-                                <Label>Tool</Label>
-                                <Select
-                                  value={step.tool}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { tool: v as any })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select tool" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="email">Email</SelectItem>
-                                    <SelectItem value="file">File</SelectItem>
-                                    <SelectItem value="browser">Browser</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              {step.tool === "email" && (
-                                <>
-                                  <div>
-                                    <Label>To</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.to ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          to: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label>Subject</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.subject ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          subject: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label>Text</Label>
-                                    <Textarea
-                                      className="mt-1.5"
-                                      value={step.text ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          text: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                </>
-                              )}
-
-                              {step.tool === "file" && (
-                                <>
-                                  <div>
-                                    <Label>Action</Label>
-                                    <Select
-                                      value={step.action}
-                                      onValueChange={(v) =>
-                                        updateStep(step.id, { action: v })
-                                      }
-                                    >
-                                      <SelectTrigger className="mt-1.5">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="write">Write</SelectItem>
-                                        <SelectItem value="append">Append</SelectItem>
-                                        <SelectItem value="read">Read</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div>
-                                    <Label>Path</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.path ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          path: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  {step.action !== "read" && (
-                                    <div>
-                                      <Label>Content</Label>
-                                      <Textarea
-                                        className="mt-1.5"
-                                        value={step.content ?? ""}
-                                        onChange={(e) =>
-                                          updateStep(step.id, {
-                                            content: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              )}
-
-                              {step.tool === "browser" && (
-                                <>
-                                  <div>
-                                    <Label>Action</Label>
-                                    <Select
-                                      value={step.action}
-                                      onValueChange={(v) =>
-                                        updateStep(step.id, { action: v })
-                                      }
-                                    >
-                                      <SelectTrigger className="mt-1.5">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="screenshot">Screenshot</SelectItem>
-                                        <SelectItem value="evaluate">Evaluate</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div>
-                                    <Label>URL</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={step.url ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          url: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  {step.action === "evaluate" && (
-                                    <div>
-                                      <Label>Code</Label>
-                                      <Textarea
-                                        className="mt-1.5 font-mono text-sm"
-                                        value={step.code ?? ""}
-                                        onChange={(e) =>
-                                          updateStep(step.id, {
-                                            code: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </>
-                          )}
-
-                          {step.type === "LLM" && (
-                            <>
-                              <div>
-                                <Label>Prompt</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px] font-mono text-sm"
-                                  value={step.prompt ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      prompt: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div className="mt-4 rounded-lg border border-muted p-4">
-                                <p className="text-sm font-semibold mb-3">Advanced Options</p>
-                                <div className="flex items-center justify-between">
-                                  <Label className="cursor-pointer">Use Agent Memory</Label>
-                                  <input
-                                    type="checkbox"
-                                    checked={step.useMemory ?? false}
-                                    onChange={(e) =>
+                          {(() => {
+                            const def = nodeDefinitions.find(d => d.id === step.type || (step.type === 'Tool' && d.id === step.tool));
+                            if (!def) return null;
+                            return (
+                              <div className="mt-4 border-t pt-4 space-y-4">
+                                {def.fields.map(field => (
+                                  <FieldRenderer
+                                    key={field.name}
+                                    field={field}
+                                    value={step.config?.[field.name]}
+                                    onChange={(val) => {
                                       updateStep(step.id, {
-                                        useMemory: e.target.checked,
-                                      })
-                                    }
+                                        config: {
+                                          ...(step.config || {}),
+                                          [field.name]: val
+                                        }
+                                      });
+                                    }}
                                   />
-                                </div>
-                                {step.useMemory && (
-                                  <div className="mt-3">
-                                    <Label>Memory Top K</Label>
-                                    <Input
-                                      type="number"
-                                      className="mt-1.5"
-                                      value={step.memoryTopK ?? 5}
-                                      onChange={(e) =>
-                                        updateStep(step.id, {
-                                          memoryTopK: Number(e.target.value),
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                )}
+                                ))}
                               </div>
-                            </>
-                          )}
-
-                          {step.type === "HTTP" && (
-                            <>
-                              <div>
-                                <Label>Method</Label>
-                                <Select
-                                  value={step.method}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, {
-                                      method: v as any,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="GET">GET</SelectItem>
-                                    <SelectItem value="POST">POST</SelectItem>
-                                    <SelectItem value="PUT">PUT</SelectItem>
-                                    <SelectItem value="DELETE">DELETE</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>URL</Label>
-                                <Input
-                                  className="mt-1.5"
-                                  value={step.url ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      url: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Body (JSON)</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px] font-mono text-sm"
-                                  value={step.body ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      body: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {step.type === "MCP" && (
-                            <>
-                              <div className="rounded-lg border border-muted p-3 text-xs text-muted-foreground">
-                                MCP tools come from the servers configured on the
-                                Settings page.
-                              </div>
-                              <div>
-                                <Label>Server</Label>
-                                <Select
-                                  value={step.serverId}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, {
-                                      serverId: v,
-                                      toolName: "",
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select server" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Array.from(
-                                      new Map(
-                                        mcpTools.map((tool) => [
-                                          tool.serverId,
-                                          tool.serverName || tool.serverId,
-                                        ]),
-                                      ).entries(),
-                                    ).map(([serverId, serverName]) => (
-                                      <SelectItem key={serverId} value={serverId}>
-                                        {serverName}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>Tool</Label>
-                                <Select
-                                  value={step.toolName}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { toolName: v })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select tool" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {mcpTools
-                                      .filter(
-                                        (tool) => tool.serverId === step.serverId,
-                                      )
-                                      .map((tool) => (
-                                        <SelectItem key={tool.id} value={tool.name}>
-                                          {tool.name}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>Arguments (JSON)</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[120px] font-mono text-sm"
-                                  value={step.arguments ?? "{\n  \n}"}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      arguments: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Timeout (ms)</Label>
-                                <Input
-                                  className="mt-1.5"
-                                  type="number"
-                                  value={step.timeoutMs ?? 30000}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      timeoutMs: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Input Schema</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[140px] font-mono text-xs"
-                                  readOnly
-                                  value={JSON.stringify(
-                                    mcpTools.find(
-                                      (tool) =>
-                                        tool.serverId === step.serverId &&
-                                        tool.name === step.toolName,
-                                    )?.inputSchema ??
-                                      "Select an MCP tool to inspect its schema.",
-                                    null,
-                                    2,
-                                  )}
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {step.type === "Document" && (
-                            <>
-                              <div>
-                                <Label>Document</Label>
-                                <Select
-                                  value={step.documentId}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { documentId: v })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select document" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {documents.map((doc) => (
-                                      <SelectItem key={doc._id} value={doc._id}>
-                                        {doc.title || "Untitled"}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>Query</Label>
-                                <Textarea
-                                  className="mt-1.5 min-h-[100px]"
-                                  value={step.query ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      query: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Top K Chunks</Label>
-                                <Input
-                                  type="number"
-                                  className="mt-1.5"
-                                  value={step.topK ?? 4}
-                                  onChange={(e) =>
-                                    updateStep(step.id, {
-                                      topK: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {step.type === "Delay" && (
-                            <div>
-                              <Label>Delay (seconds)</Label>
-                              <Input
-                                type="number"
-                                className="mt-1.5"
-                                value={step.delay ?? 0}
-                                onChange={(e) =>
-                                  updateStep(step.id, {
-                                    delay: Number(e.target.value),
-                                  })
-                                }
-                              />
-                            </div>
-                          )}
-
-                            {/* GitHub */}
-                          {step.type === "GitHub" && (
-                            <>
-                              <div>
-                                <Label>Action</Label>
-                                <Select
-                                  value={step.action}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { action: v })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select action" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="create_issue">Create Issue</SelectItem>
-                                    <SelectItem value="get_issue">Get Issue</SelectItem>
-                                    <SelectItem value="comment_issue">Comment Issue</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>Owner</Label>
-                                <Input
-                                  className="mt-1.5"
-                                  value={(step as any).owner ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, { owner: e.target.value } as any)
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <Label>Repo</Label>
-                                <Input
-                                  className="mt-1.5"
-                                  value={(step as any).repo ?? ""}
-                                  onChange={(e) =>
-                                    updateStep(step.id, { repo: e.target.value } as any)
-                                  }
-                                />
-                              </div>
-                              {step.action === "create_issue" && (
-                                <>
-                                  <div>
-                                    <Label>Title</Label>
-                                    <Input
-                                      className="mt-1.5"
-                                      value={(step as any).title ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, { title: e.target.value } as any)
-                                      }
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label>Body</Label>
-                                    <Textarea
-                                      className="mt-1.5"
-                                      value={step.body ?? ""}
-                                      onChange={(e) =>
-                                        updateStep(step.id, { body: e.target.value })
-                                      }
-                                    />
-                                  </div>
-                                </>
-                              )}
-                              {(step.action === "get_issue" || step.action === "comment_issue") && (
-                                <div>
-                                  <Label>Issue Number</Label>
-                                  <Input
-                                    className="mt-1.5"
-                                    value={(step as any).issue_number ?? ""}
-                                    onChange={(e) =>
-                                      updateStep(step.id, { issue_number: e.target.value } as any)
-                                    }
-                                  />
-                                </div>
-                              )}
-                              {step.action === "comment_issue" && (
-                                <div>
-                                  <Label>Comment</Label>
-                                  <Textarea
-                                    className="mt-1.5"
-                                    value={(step as any).comment ?? ""}
-                                    onChange={(e) =>
-                                      updateStep(step.id, { comment: e.target.value } as any)
-                                    }
-                                  />
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                              {/* Slack */}
-                          {step.type === "Slack" && (
-                            <div>
-                              <Label>Message</Label>
-                              <Textarea
-                                className="mt-1.5"
-                                value={step.text ?? ""}
-                                onChange={(e) =>
-                                  updateStep(step.id, { text: e.target.value })
-                                }
-                              />
-                            </div>
-                          )}
-                              {/* Discord */}
-                          {step.type === "Discord" && (
-                            <div>
-                              <Label>Message</Label>
-                              <Textarea
-                                className="mt-1.5"
-                                value={step.content ?? ""}
-                                onChange={(e) =>
-                                  updateStep(step.id, { content: e.target.value })
-                                }
-                              />
-                            </div>
-                          )}
-
-                          {/* CONDITION */}
-                          {step.type === "Condition" && (
-                            <>
-                              <div>
-                                <Label>Condition Type</Label>
-                                <Select
-                                  value={step.conditionType}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, {
-                                      conditionType: v as any,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select type" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="boolean">Boolean</SelectItem>
-                                    <SelectItem value="sentiment">Sentiment</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div>
-                                <Label>Operator</Label>
-                                <Select
-                                  value={step.operator}
-                                  onValueChange={(v) =>
-                                    updateStep(step.id, { operator: v as any })
-                                  }
-                                >
-                                  <SelectTrigger className="mt-1.5">
-                                    <SelectValue placeholder="Select operator" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {step.conditionType === "boolean" && (
-                                      <>
-                                        <SelectItem value="isTrue">is True</SelectItem>
-                                        <SelectItem value="isFalse">is False</SelectItem>
-                                      </>
-                                    )}
-                                    {step.conditionType === "sentiment" && (
-                                      <>
-                                        <SelectItem value="isPositive">is Positive</SelectItem>
-                                        <SelectItem value="isNegative">is Negative</SelectItem>
-                                      </>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </>
-                          )}
+                            );
+                          })()}
                         </div>
                       </Card>
                     </motion.div>
                   ))}
                 </AnimatePresence>
 
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  onClick={addStep}
-                >
+                <Button variant="outline" className="w-full bg-transparent" onClick={addStep}>
                   <Plus className="mr-2 size-4" />
                   Add Step
                 </Button>
               </div>
             )}
           </div>
-        </main>
-      </div>
-    </AuthGuard>
+    </AuthenticatedLayout>
   );
 }
+

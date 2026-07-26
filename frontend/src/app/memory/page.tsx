@@ -1,25 +1,13 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
-import { AppSidebar } from "@/components/app-sidebar";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { apiUrl } from "@/lib/api";
-
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  EmptyDescription,
-  EmptyContent,
-} from "@/components/ui/empty";
+import { useEffect, useRef, useState } from 'react';
+import { AuthenticatedLayout } from '@/components/layout/authenticated-layout';
+import { apiUrl } from '@/lib/api';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 
 import {
   Sheet,
@@ -27,21 +15,21 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
-} from "@/components/ui/sheet";
-import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+} from '@/components/ui/sheet';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Brain,
   Search,
   Trash2,
-  Clock,
   Bot,
   User,
-  Info,
   Database,
   SearchX,
-} from "lucide-react";
+  Workflow,
+  Cpu,
+  Calendar,
+  Layers,
+} from 'lucide-react';
 
 type Memory = {
   _id: string;
@@ -58,25 +46,55 @@ type Memory = {
   createdAt: string;
 };
 
+// Visual Sparkline for Embeddings
+function EmbeddingSparkline({ embedding }: { embedding?: number[] }) {
+  if (!embedding || embedding.length === 0) return null;
+
+  // Use first 48 dimensions for the visualization
+  const sample = embedding.slice(0, 48);
+  const max = Math.max(...sample.map(Math.abs), 0.001); // avoid div by 0
+
+  return (
+    <div className="flex items-end gap-[2px] h-12 w-full mt-3 overflow-hidden rounded-md bg-muted/20 p-2 border border-border/30">
+      {sample.map((val, i) => {
+        const heightPct = (Math.abs(val) / max) * 100;
+        return (
+          <div
+            key={i}
+            className="w-full flex-1 bg-primary/70 rounded-[1px] hover:bg-primary transition-colors"
+            style={{ height: `${Math.max(5, heightPct)}%` }}
+            title={`Dim ${i}: ${val.toFixed(4)}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function MemoryPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const inspectorScrollRef = useRef<HTMLDivElement | null>(null);
 
   async function fetchMemories() {
-    const url = apiUrl("/memory?search=") + encodeURIComponent(search);
-    const res = await fetch(url, {
-      headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
-      },
-    });
+    try {
+      const url = apiUrl('/memory?search=') + encodeURIComponent(search);
+      const res = await fetch(url, {
+        headers: {
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
+        },
+      });
 
-    const data = await res.json();
-    if (data.ok) setMemories(data.memories);
-    setLoading(false);
+      const data = await res.json();
+      if (data.ok) setMemories(data.memories);
+    } catch (error) {
+      console.warn('Failed to fetch memories:', error);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -95,9 +113,9 @@ export default function MemoryPage() {
 
   async function deleteMemory(id: string) {
     await fetch(apiUrl(`/memory/${id}`), {
-      method: "DELETE",
+      method: 'DELETE',
       headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
+        Authorization: 'Bearer ' + localStorage.getItem('token'),
       },
     });
 
@@ -113,398 +131,379 @@ export default function MemoryPage() {
   }
 
   return (
-    <AuthGuard>
-      <div className="flex min-h-screen bg-background">
-        <AppSidebar />
-
-        <main
-          className="flex-1 transition-[padding] duration-300"
-          style={{ paddingLeft: "var(--sidebar-width,256px)" }}
-        >
-          <div className="p-8 max-w-6xl mx-auto">
-            {/* Header */}
-            <div className="mb-8 flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold flex items-center gap-2">
-                  <Brain className="size-6 text-primary" />
-                  Agent Memory
-                </h1>
-
-                <p className="text-sm text-muted-foreground mt-1">
-                  Persistent semantic memory stored by AI agents
-                </p>
+    <AuthenticatedLayout>
+      <div className="max-w-6xl mx-auto pb-12">
+        {/* Header */}
+        <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20">
+                <Brain className="size-6 text-primary" />
               </div>
-
-              <Badge variant="secondary">{memories.length} memories</Badge>
+              <h1 className="text-3xl font-bold tracking-tight">Memory Explorer</h1>
             </div>
-
-            {/* Search */}
-            <Card className="mb-6">
-              <CardContent className="p-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search memory content..."
-                    className="pl-9"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Memory Feed */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="size-4" />
-                  Memory Feed
-                </CardTitle>
-              </CardHeader>
-
-              <Separator />
-
-              <CardContent className="p-0">
-                <ScrollArea className="h-[600px]">
-                  <div className="p-6 space-y-6">
-                    {loading && (
-                      <>
-                        <Skeleton className="h-24 w-full" />
-                        <Skeleton className="h-24 w-full" />
-                        <Skeleton className="h-24 w-full" />
-                      </>
-                    )}
-
-                    {!loading && memories.length === 0 && (
-                      <div className="py-6">
-                        {search ? (
-                          <Empty className="border-none bg-transparent">
-                            <EmptyHeader>
-                              <EmptyMedia variant="icon">
-                                <SearchX />
-                              </EmptyMedia>
-                              <EmptyTitle>No memories found</EmptyTitle>
-                              <EmptyDescription>
-                                Your filter parameter for &quot;{search}&quot; returned no historical semantic matches.
-                              </EmptyDescription>
-                            </EmptyHeader>
-                            <EmptyContent>
-                              <Button size="sm" variant="outline" onClick={() => setSearch("")}>
-                                Reset Filter
-                              </Button>
-                            </EmptyContent>
-                          </Empty>
-                        ) : (
-                          <Empty className="border-none bg-transparent">
-                            <EmptyHeader>
-                              <EmptyMedia variant="icon">
-                                <Brain />
-                              </EmptyMedia>
-                              <EmptyTitle>No memories captured</EmptyTitle>
-                              <EmptyDescription>
-                                Agent memory instances will display here continuously once your multi-agent pipelines begin running.
-                              </EmptyDescription>
-                            </EmptyHeader>
-                          </Empty>
-                        )}
-                      </div>
-                    )}
-
-                    {memories.map((m) => {
-                      const parsed = parseMemory(m.content);
-
-                      return (
-                        <Card
-                          key={m._id}
-                          className="p-4 hover:border-primary transition cursor-pointer"
-                          onClick={() => {
-                            setSelectedMemory(m);
-                            setInspectorOpen(true);
-                          }}
-                        >
-                          <div className="flex justify-between items-start gap-6">
-                            <div className="flex-1 space-y-4">
-                              {/* User */}
-                              {parsed.user && (
-                                <div className="flex gap-3">
-                                  <User className="size-4 mt-1 text-muted-foreground" />
-                                  <div>
-                                    <p className="text-xs text-muted-foreground mb-1">User</p>
-                                    <p className="text-sm whitespace-pre-wrap">{parsed.user}</p>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Assistant */}
-                              {parsed.assistant && (
-                                <div className="flex gap-3">
-                                  <Bot className="size-4 mt-1 text-muted-foreground" />
-                                  <div>
-                                    <p className="text-xs text-muted-foreground mb-1">Assistant</p>
-                                    <p className="text-sm whitespace-pre-wrap">{parsed.assistant}</p>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Raw fallback */}
-                              {parsed.raw && (
-                                <p className="text-sm whitespace-pre-wrap">{parsed.raw}</p>
-                              )}
-
-                              {/* Metadata */}
-                              <div className="flex items-center gap-3 text-xs">
-                                <Badge variant="secondary" className="gap-1">
-                                  <Bot className="size-3" />
-                                  {m.agentId?.name || "agent"}
-                                </Badge>
-
-                                <Badge variant="outline" className="gap-1">
-                                  <Clock className="size-3" />
-                                  {new Date(m.createdAt).toLocaleString()}
-                                </Badge>
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteMemory(m._id);
-                              }}
-                              className="text-destructive hover:bg-destructive/10"
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+            <p className="text-sm text-muted-foreground max-w-xl">
+              Inspect the persistent semantic memory layer captured across your multi-agent
+              workflows.
+            </p>
           </div>
-        </main>
+        </div>
 
+        {/* Search */}
+        <div className="mb-10 relative max-w-2xl group">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search className="size-5 text-muted-foreground/50 group-focus-within:text-primary transition-colors" />
+          </div>
+          <Input
+            placeholder="Search semantic memory..."
+            className="pl-12 h-14 bg-background border-border/60 text-base shadow-sm focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:border-primary/50 rounded-2xl transition-all"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Memory Feed List */}
+        <div className="space-y-4 max-w-4xl">
+          {loading &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-border/40 bg-card p-6 flex flex-col gap-4"
+              >
+                <Skeleton className="h-6 w-1/3" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-4 w-1/4" />
+              </div>
+            ))}
+
+          {!loading && memories.length === 0 && (
+            <div className="py-16 rounded-2xl border border-dashed border-border/50 bg-background/20">
+              {search ? (
+                <EmptyState
+                  className="border-none bg-transparent"
+                  icon={SearchX}
+                  title="No memories found"
+                  description={`Your filter for "${search}" returned no semantic matches.`}
+                  primaryAction={
+                    <Button size="sm" variant="outline" onClick={() => setSearch('')}>
+                      Clear Search
+                    </Button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  className="border-none bg-transparent"
+                  icon={Database}
+                  title="Database empty"
+                  description="Semantic memories will appear here once agents begin execution."
+                />
+              )}
+            </div>
+          )}
+
+          {!loading &&
+            memories.map((m) => {
+              const parsed = parseMemory(m.content);
+
+              return (
+                <div
+                  key={m._id}
+                  onClick={() => {
+                    setSelectedMemory(m);
+                    setInspectorOpen(true);
+                  }}
+                  className="group relative flex flex-col rounded-2xl border border-border/50 bg-card hover:bg-muted/10 hover:border-border/80 transition-all cursor-pointer shadow-sm hover:shadow-md overflow-hidden"
+                >
+                  {/* Visual Header */}
+                  <div className="px-5 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Brain className="size-4 text-primary/70" />
+                      <span className="font-semibold text-xs uppercase tracking-widest text-foreground/80">
+                        Semantic Memory
+                      </span>
+                    </div>
+                    {m.embedding?.length && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-mono bg-background border-border/60 text-muted-foreground"
+                      >
+                        [{m.embedding.length}D VECTOR]
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="p-5 flex-1 space-y-4">
+                    {/* Content Preview */}
+                    <div className="space-y-3">
+                      {parsed.user && (
+                        <div className="flex gap-3">
+                          <User className="size-4 mt-0.5 text-muted-foreground shrink-0" />
+                          <p className="text-sm text-foreground/90 line-clamp-2 leading-relaxed font-sans">
+                            {parsed.user}
+                          </p>
+                        </div>
+                      )}
+
+                      {parsed.assistant && (
+                        <div className="flex gap-3">
+                          <Bot className="size-4 mt-0.5 text-primary/70 shrink-0" />
+                          <p className="text-sm text-foreground/80 line-clamp-2 leading-relaxed font-sans">
+                            {parsed.assistant}
+                          </p>
+                        </div>
+                      )}
+
+                      {parsed.raw && (
+                        <div className="flex gap-3">
+                          <Database className="size-4 mt-0.5 text-muted-foreground shrink-0" />
+                          <p className="text-sm text-foreground/80 line-clamp-3 leading-relaxed font-mono bg-muted/30 p-2 rounded-lg border border-border/30 w-full">
+                            {parsed.raw}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Metadata Row */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-3 border-t border-border/40 text-[11px] font-mono text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Cpu className="size-3 opacity-70" />
+                        <span className="truncate max-w-[120px]">
+                          {m.agentId?.name || 'unknown_agent'}
+                        </span>
+                      </div>
+
+                      {m.metadata?.workflowId && (
+                        <div className="flex items-center gap-1.5">
+                          <Workflow className="size-3 opacity-70" />
+                          <span className="truncate max-w-[100px]" title={m.metadata.workflowId}>
+                            WKF_{m.metadata.workflowId.substring(0, 6)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <Calendar className="size-3 opacity-70" />
+                        {new Date(m.createdAt).toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hover Delete Action */}
+                  <div className="absolute right-4 top-14 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMemory(m._id);
+                      }}
+                      className="size-8 text-destructive hover:bg-destructive hover:text-destructive-foreground shadow-sm rounded-full"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+
+        {/* Database-style Inspector Sheet */}
         <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
-          <SheetContent className="w-[min(720px,90vw)] p-0 h-screen flex flex-col">
+          <SheetContent className="w-[min(640px,100vw)] p-0 h-screen flex flex-col bg-background border-l-border/50 shadow-2xl">
             <SheetHeader className="sr-only">
               <SheetTitle>Memory Inspector</SheetTitle>
-              <SheetDescription>
-                Inspect stored semantic memory and embeddings
-              </SheetDescription>
+              <SheetDescription>Database record inspector</SheetDescription>
             </SheetHeader>
+
             {selectedMemory && (
               <>
                 {/* HEADER */}
-                <div className="border-b px-6 py-4 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-md bg-primary/10">
-                      <Brain className="size-5 text-primary" />
-                    </div>
-
-                    <div>
-                      <p className="font-semibold">Memory Inspector</p>
-                      <p className="text-xs text-muted-foreground">
-                        Inspect stored semantic memory and embeddings
-                      </p>
-                    </div>
+                <div className="border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0 bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <Database className="size-4 text-primary" />
+                    <h2 className="font-semibold tracking-tight text-sm">Memory Inspector</h2>
                   </div>
-
-                  <Badge variant="secondary">
-                    {selectedMemory.metadata?.type || "conversation"}
+                  <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                    ID: {selectedMemory._id.substring(0, 8)}...
                   </Badge>
                 </div>
 
                 {/* SCROLLABLE CONTENT */}
-                <div
-                  ref={inspectorScrollRef}
-                  className="flex-1 overflow-y-auto px-6 py-6 space-y-6"
-                >
-                  {/* MEMORY PREVIEW */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Bot className="size-4" />
-                        Memory Conversation
-                      </CardTitle>
-                    </CardHeader>
+                <div ref={inspectorScrollRef} className="flex-1 overflow-y-auto">
+                  {/* METADATA SECTION */}
+                  <div className="px-6 py-6 border-b border-border/50 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                      Metadata
+                    </h3>
 
-                    <CardContent className="space-y-4">
-                      {(() => {
-                        try {
-                          const parsed = JSON.parse(selectedMemory.content);
-
-                          return (
-                            <>
-                              {/* USER */}
-                              <div className="flex gap-3 items-start">
-                                <Avatar className="size-7 shrink-0">
-                                  <AvatarFallback>U</AvatarFallback>
-                                </Avatar>
-
-                                <div className="bg-muted text-sm rounded-md px-3 py-2 break-words max-w-[85%]">
-                                  {parsed.user}
-                                </div>
-                              </div>
-
-                              {/* ASSISTANT */}
-                              <div className="flex gap-3 items-start">
-                                <Avatar className="size-7 shrink-0">
-                                  <AvatarFallback>A</AvatarFallback>
-                                </Avatar>
-
-                                <div className="bg-primary/5 border text-sm rounded-md px-3 py-2 break-words max-w-[85%]">
-                                  {parsed.assistant}
-                                </div>
-                              </div>
-                            </>
-                          );
-                        } catch {
-                          return (
-                            <pre className="text-sm whitespace-pre-wrap break-words">
-                              {selectedMemory.content}
-                            </pre>
-                          );
-                        }
-                      })()}
-                    </CardContent>
-                  </Card>
-
-                  {/* METADATA */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Info className="size-4" />
-                        Metadata
-                      </CardTitle>
-                    </CardHeader>
-
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Agent</p>
-                          <p className="font-medium">
-                            {selectedMemory.agentId?.name || "Unknown"}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground">Type</p>
-                          <p className="font-medium">
-                            {selectedMemory.metadata?.type || "conversation"}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground">Workflow</p>
-                          <p className="font-mono text-xs break-all">
-                            {selectedMemory.metadata?.workflowId || "N/A"}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground">Task</p>
-                          <p className="font-mono text-xs break-all">
-                            {selectedMemory.metadata?.taskId || "N/A"}
-                          </p>
-                        </div>
-
-                        <div className="col-span-2">
-                          <p className="text-xs text-muted-foreground">Created</p>
-                          <p>
-                            {new Date(selectedMemory.createdAt).toLocaleString()}
-                          </p>
+                    <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                          Agent
+                        </p>
+                        <div className="flex items-center gap-1.5 font-mono text-xs bg-background border border-border/50 px-2 py-1 rounded w-fit">
+                          <Bot className="size-3 text-primary" />
+                          {selectedMemory.agentId?.name || 'Unknown'}
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                          Type
+                        </p>
+                        <p className="font-mono text-xs">
+                          {selectedMemory.metadata?.type || 'conversation'}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                          Workflow Link
+                        </p>
+                        <p className="font-mono text-xs text-foreground/80 break-all bg-muted/30 px-1 rounded">
+                          {selectedMemory.metadata?.workflowId || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                          Task Link
+                        </p>
+                        <p className="font-mono text-xs text-foreground/80 break-all bg-muted/30 px-1 rounded">
+                          {selectedMemory.metadata?.taskId || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="col-span-2 space-y-1 pt-2 border-t border-border/30">
+                        <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                          Created Timestamp
+                        </p>
+                        <p className="font-mono text-xs">
+                          {new Date(selectedMemory.createdAt).toISOString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-                  {/* EMBEDDING INFO */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Database className="size-4" />
-                        Embedding Vector
-                      </CardTitle>
-                    </CardHeader>
+                  {/* VECTOR SECTION */}
+                  {selectedMemory.embedding && (
+                    <div className="px-6 py-6 border-b border-border/50 bg-background">
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
+                        <Layers className="size-3" />
+                        Vector Data
+                      </h3>
 
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Provider</p>
-                          <Badge variant="outline">
-                            {selectedMemory.embeddingProvider || "unknown"}
-                          </Badge>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground">Model</p>
+                      <div className="flex items-end justify-between mb-2">
+                        <div className="space-y-1">
+                          <p className="text-[10px] uppercase text-muted-foreground font-semibold">
+                            Provider / Model
+                          </p>
                           <p className="font-mono text-xs">
-                            {selectedMemory.embeddingModel || "unknown"}
+                            <span className="text-foreground/60">
+                              {selectedMemory.embeddingProvider || 'N/A'}
+                            </span>
+                            {' / '}
+                            <span className="text-foreground/90">
+                              {selectedMemory.embeddingModel || 'N/A'}
+                            </span>
                           </p>
                         </div>
-
-                        <div>
-                          <p className="text-xs text-muted-foreground">Vector Size</p>
-                          <p className="font-semibold">
-                            {selectedMemory.embedding?.length || 0}
+                        <div className="text-right">
+                          <p className="text-lg font-mono font-bold text-foreground">
+                            {selectedMemory.embedding.length}
                           </p>
+                          <p className="text-[10px] uppercase text-muted-foreground">Dimensions</p>
                         </div>
                       </div>
 
-                      <Progress
-                        value={Math.min(
-                          ((selectedMemory.embedding?.length || 0) / 4096) * 100,
-                          100,
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
+                      <EmbeddingSparkline embedding={selectedMemory.embedding} />
+                    </div>
+                  )}
 
-                  {/* RAW DATA */}
-                  <Tabs defaultValue="content">
-                    <TabsList className="grid grid-cols-2 w-full">
-                      <TabsTrigger value="content">Memory Content</TabsTrigger>
-                      <TabsTrigger value="raw">Raw JSON</TabsTrigger>
-                    </TabsList>
+                  {/* CONTENT SECTION */}
+                  <div className="px-6 py-6">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                      Payload
+                    </h3>
 
-                    <TabsContent value="content">
-                      <Card>
-                        <CardContent className="p-4">
-                          <pre className="text-sm whitespace-pre-wrap break-words">
-                            {selectedMemory.content}
-                          </pre>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
+                    <Tabs defaultValue="structured" className="w-full">
+                      <TabsList className="w-full bg-muted/30 p-1 rounded-lg h-9">
+                        <TabsTrigger
+                          value="structured"
+                          className="rounded-md text-[11px] font-medium uppercase tracking-wider w-1/2"
+                        >
+                          Structured
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="raw"
+                          className="rounded-md text-[11px] font-medium uppercase tracking-wider w-1/2"
+                        >
+                          Raw JSON
+                        </TabsTrigger>
+                      </TabsList>
 
-                    <TabsContent value="raw">
-                      <Card>
-                        <CardContent className="p-4">
-                          <pre className="text-xs overflow-auto break-words max-h-[260px]">
+                      <TabsContent value="structured" className="mt-4">
+                        {(() => {
+                          try {
+                            const parsed = JSON.parse(selectedMemory.content);
+                            return (
+                              <div className="space-y-4">
+                                {parsed.user && (
+                                  <div className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">
+                                      User
+                                    </span>
+                                    <div className="bg-muted/40 border border-border/40 text-sm rounded-lg px-4 py-3 font-sans text-foreground/90">
+                                      {parsed.user}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {parsed.assistant && (
+                                  <div className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-primary/70 tracking-widest">
+                                      Assistant
+                                    </span>
+                                    <div className="bg-primary/5 border border-primary/10 text-sm rounded-lg px-4 py-3 font-sans text-foreground">
+                                      {parsed.assistant}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          } catch {
+                            return (
+                              <div className="bg-background border border-border/50 rounded-lg p-4 font-mono text-xs text-muted-foreground whitespace-pre-wrap">
+                                {selectedMemory.content}
+                              </div>
+                            );
+                          }
+                        })()}
+                      </TabsContent>
+
+                      <TabsContent value="raw" className="mt-4">
+                        <div className="rounded-lg border border-border/50 bg-background p-4 overflow-x-auto">
+                          <pre className="text-[11px] font-mono text-muted-foreground/90">
                             {JSON.stringify(selectedMemory, null, 2)}
                           </pre>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                  </Tabs>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
                 </div>
 
                 {/* FOOTER */}
-                <div className="border-t p-4 shrink-0">
+                <div className="border-t border-border/50 p-4 bg-muted/10 shrink-0">
                   <Button
-                    variant="destructive"
-                    className="w-full"
+                    variant="ghost"
+                    className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive border border-transparent hover:border-destructive/20 transition-all text-xs uppercase tracking-wider"
                     onClick={async () => {
                       await deleteMemory(selectedMemory._id);
                       setInspectorOpen(false);
                     }}
                   >
                     <Trash2 className="size-4 mr-2" />
-                    Delete Memory
+                    Delete Record
                   </Button>
                 </div>
               </>
@@ -512,6 +511,6 @@ export default function MemoryPage() {
           </SheetContent>
         </Sheet>
       </div>
-    </AuthGuard>
+    </AuthenticatedLayout>
   );
 }

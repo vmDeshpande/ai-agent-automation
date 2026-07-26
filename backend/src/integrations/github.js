@@ -63,7 +63,7 @@ async function runGitHub(step, context, interpolate) {
         };
     }
 
-    if (action === "comment_issue") {
+    if (action === "comment_issue" || action === "add_comment") {
 
         const owner = interpolate(step.owner || "", context);
         const repo = interpolate(step.repo || "", context);

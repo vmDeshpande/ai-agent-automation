@@ -1,20 +1,21 @@
-const rateLimit = require("express-rate-limit");
-const { writeLog } = require("../agents/logger");
+const rateLimit = require('express-rate-limit');
+const { writeLog } = require('../agents/logger');
 
 // Standard rate limit exceeded JSON handler with database logging
 const limitHandler = (req, res, next, options) => {
-  const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const logMessage = `Rate limit violation: IP ${ip} blocked requesting ${req.method} ${req.originalUrl}`;
-  
+
   // Log locally to stdout/stderr
   console.warn(`⚠️ [RateLimiter] ${logMessage}`);
-  
+
   // Persist rate limit violation to system logs
-  writeLog(logMessage, "warn", { workerId: "rate-limiter" })
-    .catch((err) => console.error("Failed to write rate limit log to DB:", err.message));
+  writeLog(logMessage, 'warn', { workerId: 'rate-limiter' }).catch((err) =>
+    console.error('Failed to write rate limit log to DB:', err.message)
+  );
 
   res.status(options.statusCode).json({
-    error: "rate_limit_exceeded",
+    error: 'rate_limit_exceeded',
     message: options.message,
   });
 };
@@ -23,7 +24,7 @@ const limitHandler = (req, res, next, options) => {
 const globalLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 900000, // 15 mins default
   max: Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 100,
-  message: "Too many requests. Please try again later.",
+  message: 'Too many requests. Please try again later.',
   handler: limitHandler,
   standardHeaders: true,
   legacyHeaders: false,
@@ -32,8 +33,8 @@ const globalLimiter = rateLimit({
 // 2. Auth Limiter (applied to registration & login endpoints)
 const authLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 900000, // 15 mins default
-  max: Number(process.env.RATE_LIMIT_AUTH_MAX) || 5,
-  message: "Too many authentication attempts. Please try again after 15 minutes.",
+  max: Number(process.env.RATE_LIMIT_AUTH_MAX) || 50,
+  message: 'Too many authentication attempts. Please try again after 15 minutes.',
   handler: limitHandler,
   standardHeaders: true,
   legacyHeaders: false,
@@ -43,7 +44,7 @@ const authLimiter = rateLimit({
 const expensiveLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: Number(process.env.RATE_LIMIT_EXPENSIVE_MAX) || 10,
-  message: "Rate limit exceeded for expensive operations. Please slow down.",
+  message: 'Rate limit exceeded for expensive operations. Please slow down.',
   handler: limitHandler,
   standardHeaders: true,
   legacyHeaders: false,
@@ -53,7 +54,17 @@ const expensiveLimiter = rateLimit({
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: Number(process.env.RATE_LIMIT_WEBHOOK_MAX) || 20,
-  message: "Too many webhook requests. Please slow down.",
+  message: 'Too many webhook requests. Please slow down.',
+  handler: limitHandler,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 5. Dashboard Limiter (applied to public /api/live-status routes)
+const dashboardLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 100,
+  message: 'Too many requests. Please try again later.',
   handler: limitHandler,
   standardHeaders: true,
   legacyHeaders: false,
@@ -64,4 +75,5 @@ module.exports = {
   authLimiter,
   expensiveLimiter,
   webhookLimiter,
+  dashboardLimiter,
 };

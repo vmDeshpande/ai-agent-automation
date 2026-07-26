@@ -7,11 +7,14 @@
   "tags": ["file", "logging"],
   "steps": [
     {
+      "stepId": "log",
       "name": "Write Log Entry",
       "type": "file",
+      "position": { "x": 0, "y": 0 },
       "action": "append",
       "path": "runtime/log.txt",
       "content": "Log Entry at {{timestamp}} : {{input.message}}"
     }
-  ]
+  ],
+  "edges": []
 }

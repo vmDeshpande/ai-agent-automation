@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/docs">Documentation</a> ·
+  <a href="docs/privacy.md">Privacy</a> ·
   <a href="docs/telemetry.md">Telemetry</a> ·
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/features/">Features</a> ·
   <a href="https://vmdeshpande.github.io/ai-automation-platform-website/architecture/">Architecture</a> ·
@@ -231,6 +232,7 @@ graph TD
 - No hidden SaaS dependencies
 - Memory stored locally in MongoDB
 - No external vector database required
+- Privacy policy available in the app at `/privacy` and in [docs/privacy.md](docs/privacy.md)
 
 ---
 

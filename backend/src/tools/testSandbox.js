@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 
 async function runTests() {
-  console.log("🚀 Starting Sandboxed Tool Isolation Tests...\n");
+  console.log("🚀 Starting Sandboxed Tool Isolation Tests under Standardized Contract...\n");
   let passed = 0;
   let failed = 0;
 
@@ -95,12 +95,10 @@ async function runTests() {
 
   // 7. Test Sandbox Timeout Guard
   await assert("Hanging tool is terminated by the sandbox timeout guard", async () => {
-    // Temporarily set a very short execution timeout
     process.env.TOOL_EXECUTION_TIMEOUT_MS = "1500";
     
     const start = Date.now();
     try {
-      // Evaluate a script in Puppeteer that takes 5 seconds (using setTimeout promise)
       await runToolInSandbox("browserTool", "evaluate", [
         "https://example.com",
         "return new Promise(resolve => setTimeout(() => resolve('done'), 5000));"
@@ -115,20 +113,16 @@ async function runTests() {
         throw new Error(`Timeout took too long to trigger: ${elapsed}ms`);
       }
     } finally {
-      // Restore default/large timeout
       delete process.env.TOOL_EXECUTION_TIMEOUT_MS;
     }
   });
 
-  // Cleanup test files
   try {
     const testFilePath = path.join(process.cwd(), "runtime/sandbox/runtime/test_sandbox_file.txt");
     if (fs.existsSync(testFilePath)) {
       fs.unlinkSync(testFilePath);
     }
-  } catch (e) {
-    // ignore
-  }
+  } catch (e) {}
 
   console.log(`\n📊 Test Execution Results: ${passed} passed, ${failed} failed.\n`);
   if (failed > 0) {

@@ -4,11 +4,35 @@
   "private": true,
   "scripts": {
     "prepare": "husky",
-    "lint": "cd frontend && npm run lint"
+    "lint": "eslint frontend/src backend/src",
+    "lint:frontend": "eslint frontend/src",
+    "lint:backend": "eslint backend/src",
+    "format": "prettier --write frontend/src backend/src",
+    "format:frontend": "prettier --write frontend/src",
+    "format:backend": "prettier --write backend/src",
+    "install-nextjs-docs": "npx @next/codemod@canary agents-md"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.0.0",
-    "@commitlint/config-conventional": "^19.0.0",
-    "husky": "^9.0.0"
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.8.4",
+    "typescript-eslint": "^8.61.0"
+  },
+  "lint-staged": {
+    "frontend/src/**/*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "backend/src/**/*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   }
 }

@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
+:root, .light {
   --background: oklch(0.98 0 0);
   --foreground: oklch(0.15 0 0);
 
@@ -13,7 +13,7 @@
   --popover: oklch(0.96 0 0);
   --popover-foreground: oklch(0.15 0 0);
 
-  --primary: oklch(0.55 0.22 265);
+  --primary: oklch(0.15 0 0);
   --primary-foreground: oklch(0.98 0 0);
 
   --secondary: oklch(0.9 0 0);
@@ -36,18 +36,18 @@
 
   --border: oklch(0.85 0 0);
   --input: oklch(0.9 0 0);
-  --ring: oklch(0.55 0.22 265);
+  --ring: oklch(0.15 0 0);
 
   --radius: 0.5rem;
 
   --sidebar: oklch(0.96 0 0);
   --sidebar-foreground: oklch(0.15 0 0);
-  --sidebar-primary: oklch(0.55 0.22 265);
+  --sidebar-primary: oklch(0.15 0 0);
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.9 0 0);
   --sidebar-accent-foreground: oklch(0.15 0 0);
   --sidebar-border: oklch(0.85 0 0);
-  --sidebar-ring: oklch(0.55 0.22 265);
+  --sidebar-ring: oklch(0.15 0 0);
 }
 
 /* ---------------- DARK ---------------- */
@@ -61,8 +61,8 @@
   --popover: oklch(0.18 0 0);
   --popover-foreground: oklch(0.985 0 0);
 
-  --primary: oklch(0.62 0.22 265);
-  --primary-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
 
   --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.98 0 0);
@@ -84,18 +84,18 @@
 
   --border: oklch(0.25 0 0);
   --input: oklch(0.25 0 0);
-  --ring: oklch(0.62 0.22 265);
+  --ring: oklch(0.985 0 0);
 
   --radius: 0.5rem;
 
   --sidebar: oklch(0.18 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.62 0.22 265);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.145 0 0);
   --sidebar-accent: oklch(0.25 0 0);
   --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(0.25 0 0);
-  --sidebar-ring: oklch(0.62 0.22 265);
+  --sidebar-ring: oklch(0.985 0 0);
 }
 
 /* ---------------- MIDNIGHT ---------------- */
@@ -307,12 +307,28 @@ body {
   }
 }
 
-/* Hide scrollbar but keep scroll functionality */
-.no-scrollbar {
+/* Hide main browser scrollbars but keep scroll functionality */
+html,
+body {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE / Edge */
 }
 
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Reusable utility class for hiding scrollbars on specific containers */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 .no-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari */
+  width: 0;
+  height: 0;
+  display: none;
 }

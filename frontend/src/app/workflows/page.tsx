@@ -1,12 +1,18 @@
-"use client";
+'use client';
 
-import { useEffect, useState, FormEvent, useCallback, memo, useMemo } from "react";
-import Link from "next/link";
-import { AppSidebar } from "@/components/app-sidebar";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import type { FormEvent } from 'react';
+import { useEffect, useState, useCallback, useRef, memo, useMemo } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { AuthenticatedLayout } from '@/components/layout/authenticated-layout';
+import { FilterBar } from '@/components/layout/filter-bar';
+import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -14,43 +20,37 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { motion } from "framer-motion";
-import { useAssistantContext } from "@/context/assistant-context";
-import { useToast } from "@/hooks/use-toast";
-import { apiUrl } from "@/lib/api";
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { motion } from 'framer-motion';
+import { useAssistantContext } from '@/context/assistant-context';
+import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
+import type { WorkflowPayload as Workflow, WorkflowAgent as Agent } from '@/types/workflow';
 import {
   Bot,
   Check,
   ChevronDown,
   Copy,
-  GitFork,
   MoreVertical,
   Plus,
   Pencil,
-} from "lucide-react";
+  Trash2,
+  Search,
+  Filter,
+  Download,
+  Play,
+  Share2,
+} from 'lucide-react';
 
 // ─── Filter Utilities ──────────────────────────────────────────────
 function useDebounce<T>(value: T, delay = 300): T {
@@ -62,29 +62,14 @@ function useDebounce<T>(value: T, delay = 300): T {
   return debounced;
 }
 
-const STATUS_OPTIONS = ["all", "idle", "running", "failed", "completed"];
+const STATUS_OPTIONS = ['all', 'idle', 'running', 'failed', 'completed'];
 const SORT_OPTIONS = [
-  { value: "newest", label: "Recently Created" }, // Renamed to match issue
-  { value: "updated", label: "Recently Updated" }, // Added new option
-  { value: "oldest", label: "Oldest first" },
-  { value: "alphabetical", label: "A → Z" },
+  { value: 'newest', label: 'Recently Created' }, // Renamed to match issue
+  { value: 'updated', label: 'Recently Updated' }, // Added new option
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'alphabetical', label: 'A → Z' },
 ];
 // ───────────────────────────────────────────────────────────────────
-
-type Agent = {
-  _id: string;
-  name: string;
-};
-
-interface Workflow {
-  _id: string;
-  name: string;
-  description?: string;
-  status: "idle" | "running" | "failed" | "completed";
-  agentId?: string;
-  createdAt?: string;
-  updatedAt?: string; // Added updatedAt
-}
 
 type Template = {
   id: string;
@@ -97,36 +82,105 @@ type Template = {
 
 function getStatusColor(status: string) {
   switch (status) {
-    case "running":
-      return "bg-success/20 text-success border-success/30";
-    case "idle":
-      return "bg-muted text-muted-foreground border-border";
-    case "failed":
-      return "bg-destructive/20 text-destructive border-destructive/30";
+    case 'running':
+      return 'bg-success/20 text-success border-success/30';
+    case 'idle':
+      return 'bg-muted text-muted-foreground border-border';
+    case 'failed':
+      return 'bg-destructive/20 text-destructive border-destructive/30';
     default:
-      return "bg-muted text-muted-foreground";
+      return 'bg-muted text-muted-foreground';
+  }
+}
+
+function getStatusDescription(status: string) {
+  switch (status) {
+    case 'idle':
+      return 'Workflow is ready to run';
+    case 'running':
+      return 'Workflow is currently executing';
+    case 'failed':
+      return 'Workflow execution failed. Check logs for details.';
+    case 'completed':
+      return 'Workflow ran successfully';
+    default:
+      return `Workflow is in ${status} state`;
   }
 }
 
 function getCategoryBadgeClass(category?: string) {
   switch (category?.toLowerCase()) {
-    case "custom":
-      return "bg-violet-100 text-violet-700 border-violet-200";
-    case "productivity":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    case "automation":
-      return "bg-primary/15 text-primary border-primary/30";
-    case "documentation":
-      return "bg-amber-100 text-amber-900 border-amber-200";
-    case "data":
-      return "bg-sky-100 text-sky-800 border-sky-200";
+    case 'custom':
+      return 'bg-violet-100 text-violet-700 border-violet-200';
+    case 'productivity':
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    case 'automation':
+      return 'bg-primary/15 text-primary border-primary/30';
+    case 'documentation':
+      return 'bg-amber-100 text-amber-900 border-amber-200';
+    case 'data':
+      return 'bg-sky-100 text-sky-800 border-sky-200';
     default:
-      return "bg-muted text-muted-foreground border-border";
+      return 'bg-muted text-muted-foreground border-border';
   }
 }
 
+function WorkflowDescription({ description }: { description: string }) {
+  const descriptionRef = useRef<HTMLParagraphElement | null>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  const updateTruncationState = useCallback(() => {
+    const element = descriptionRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    setIsTruncated(element.scrollHeight > element.clientHeight + 1);
+  }, []);
+
+  useEffect(() => {
+    updateTruncationState();
+
+    const element = descriptionRef.current;
+
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateTruncationState();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [description, updateTruncationState]);
+
+  const descriptionContent = (
+    <p ref={descriptionRef} className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+      {description}
+    </p>
+  );
+
+  if (!isTruncated) {
+    return descriptionContent;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{descriptionContent}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap text-balance">
+        {description}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // ---------- WorkflowCard with inline editing, double-click, and copy ID ----------
-const WorkflowCard = memo(
+const HorizontalWorkflowCard = memo(
   ({
     workflow,
     agentName,
@@ -135,6 +189,7 @@ const WorkflowCard = memo(
     onEdit,
     onDelete,
     onUpdate,
+    onRenameSuccess,
   }: {
     workflow: Workflow;
     agentName: string;
@@ -143,6 +198,7 @@ const WorkflowCard = memo(
     onEdit: (workflow: Workflow) => void;
     onDelete: (workflow: Workflow) => void;
     onUpdate: () => void;
+    onRenameSuccess: (id: string, newName: string) => void;
   }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(workflow.name);
@@ -150,11 +206,11 @@ const WorkflowCard = memo(
     const { addToast } = useToast();
 
     const handleSave = async () => {
-      if (editName.trim() === "") {
+      if (editName.trim() === '') {
         addToast({
-          type: "error",
-          title: "Validation Error",
-          description: "Workflow name cannot be empty.",
+          type: 'error',
+          title: 'Validation Error',
+          description: 'Workflow name cannot be empty.',
         });
         setEditName(workflow.name);
         setIsEditing(false);
@@ -167,20 +223,21 @@ const WorkflowCard = memo(
       setIsSaving(true);
       try {
         const res = await fetch(apiUrl(`/workflows/${workflow._id}`), {
-          method: "PATCH",
+          method: 'PUT',
           headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
           },
           body: JSON.stringify({ name: editName }),
         });
-        if (!res.ok) throw new Error("Update failed");
+        if (!res.ok) throw new Error('Update failed');
         onUpdate(); // refresh parent
-        addToast({ type: "success", title: "Workflow renamed" });
+        onRenameSuccess(workflow._id, editName);
+        addToast({ type: 'success', title: 'Workflow renamed' });
       } catch (err) {
         console.error(err);
         setEditName(workflow.name);
-        addToast({ type: "error", title: "Failed to rename workflow" });
+        addToast({ type: 'error', title: 'Failed to rename workflow' });
       } finally {
         setIsSaving(false);
         setIsEditing(false);
@@ -189,52 +246,85 @@ const WorkflowCard = memo(
 
     return (
       <motion.div
-        whileHover={{ y: -4 }}
-        transition={{ duration: 0.24, ease: "easeOut" }}
-        className="group"
+        whileHover={{ y: -2 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="group relative"
       >
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
+        <Card className="flex flex-col md:flex-row p-6 gap-6 bg-card hover:bg-accent/5 transition-colors overflow-hidden border-border/50">
+          {/* Left Area (Description Block) */}
+          <div className="relative w-full md:w-[320px] bg-muted/20 rounded-lg overflow-hidden shrink-0 flex flex-col justify-between border border-border/50 p-5">
+            {/* Abstract gradient pattern removed */}
+
+            <p className="text-[13px] text-muted-foreground line-clamp-4 leading-relaxed relative z-10">
+              {workflow.description || 'No description provided.'}
+            </p>
+            <div className="flex items-center justify-between mt-4 relative z-10">
+              {agentName ? (
+                <div className="flex items-center gap-1.5 opacity-80 bg-background/50 backdrop-blur-sm rounded-full px-2 py-1 border border-border/30">
+                  <Bot className="size-3.5 text-primary/70" />
+                  <span className="text-[10px] font-medium tracking-wide text-foreground uppercase">
+                    {agentName}
+                  </span>
+                </div>
+              ) : (
+                <div />
+              )}
+              <div className="bg-background/90 backdrop-blur-sm border border-border/50 rounded-full px-1 py-1 flex items-center shadow-sm">
+                <StatusBadge status={workflow.status as any} className="uppercase">
+                  {workflow.status}
+                </StatusBadge>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Area (Details) */}
+          <div className="flex-1 flex flex-col justify-between min-w-0">
+            <div>
+              {/* Badges Row */}
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <span className="text-[11px] text-muted-foreground font-mono tracking-wider">
+                  ID: {workflow._id.substring(0, 8).toUpperCase()}-WF
+                </span>
+              </div>
+
+              {/* Title & Description */}
               {isEditing ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-2">
                   <input
-  type="text"
-  value={editName}
-  onChange={(e) => setEditName(e.target.value)}
-  onBlur={() => {
-    if (isEditing && !isSaving) {
-      handleSave();
-    }
-  }}
-  onKeyDown={(e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === "Escape") {
-      setIsEditing(false);
-      setEditName(workflow.name);
-    }
-  }}
-  autoFocus
-  disabled={isSaving}
-  className="text-lg font-semibold bg-background border border-input rounded px-2 py-1 flex-1"
-/>
-                  {isSaving && (
-                    <span className="text-sm text-muted-foreground">Saving...</span>
-                  )}
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => {
+                      if (isEditing && !isSaving) {
+                        handleSave();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSave();
+                      } else if (e.key === 'Escape') {
+                        setIsEditing(false);
+                        setEditName(workflow.name);
+                      }
+                    }}
+                    autoFocus
+                    disabled={isSaving}
+                    className="text-2xl font-bold bg-background border border-input rounded px-2 py-1 flex-1"
+                  />
+                  {isSaving && <span className="text-sm text-muted-foreground">Saving...</span>}
                 </div>
               ) : (
                 <div
-                  className="group flex items-center gap-2"
                   onDoubleClick={() => {
                     setIsEditing(true);
                     setEditName(workflow.name);
                   }}
+                  className="flex items-center gap-2 mb-2 group/title"
                 >
                   <Link
                     href={`/workflows/${workflow._id}`}
-                    className="text-lg font-semibold hover:text-primary"
+                    className="text-2xl font-bold tracking-tight hover:text-primary transition-colors block truncate"
                   >
                     {workflow.name}
                   </Link>
@@ -243,36 +333,94 @@ const WorkflowCard = memo(
                       setIsEditing(true);
                       setEditName(workflow.name);
                     }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="opacity-0 group-hover/title:opacity-100 transition-opacity"
                     aria-label="Edit name"
                   >
                     <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
                   </button>
                 </div>
               )}
-              {workflow.description && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {workflow.description}
+              {workflow.description ? (
+                <WorkflowDescription description={workflow.description} />
+              ) : (
+                <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed max-w-2xl">
+                  No description provided.
                 </p>
               )}
             </div>
 
+            {/* Metrics Row */}
+            <div className="flex items-center gap-10 mt-6 pt-6 border-t border-border/30">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">
+                  Success Rate
+                </span>
+                <span className="text-xl font-bold text-cyan-400">-</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">
+                  Avg Runtime
+                </span>
+                <span className="text-xl font-bold text-foreground">-</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">
+                  Active Instances
+                </span>
+                <span className="text-xl font-bold text-fuchsia-400">-</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Area (Far Right) */}
+          <div className="flex flex-col gap-3 shrink-0 md:pl-6 md:border-l border-border/10 justify-center">
+            <Link href={`/workflows/${workflow._id}`}>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="size-11 rounded-xl bg-muted/30 hover:bg-primary/20 hover:text-primary transition-colors"
+                aria-label="Run workflow"
+              >
+                <Play className="size-5" fill="currentColor" />
+              </Button>
+            </Link>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-11 rounded-xl bg-muted/30 hover:bg-muted transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                onEdit(workflow);
+              }}
+              aria-label="Edit workflow"
+            >
+              <Pencil className="size-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-11 rounded-xl bg-muted/30 hover:bg-muted transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                onCopy(workflow._id);
+              }}
+              aria-label="Copy workflow ID"
+            >
+              <Copy className="size-4" />
+            </Button>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreVertical className="h-4 w-4" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 rounded-xl hover:bg-muted transition-colors"
+                  aria-label="More options"
+                >
+                  <MoreVertical className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <Link href={`/workflows/${workflow._id}/builder`}>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
-                    Edit Workflow Details
-                  </DropdownMenuItem>
-                </Link>
                 <DropdownMenuItem
                   className="text-destructive"
                   onClick={(e) => {
@@ -281,106 +429,271 @@ const WorkflowCard = memo(
                     onDelete(workflow);
                   }}
                 >
-                  Delete
+                  Delete Workflow
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 overflow-hidden opacity-0 max-h-0 transition-all duration-200 group-hover:opacity-100 group-hover:max-h-24">
-            <Button variant="outline" size="sm" onClick={() => onEdit(workflow)}>
-              Edit details
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onDelete(workflow);
-              }}
-            >
-              Delete
-            </Button>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <Badge className={getStatusColor(workflow.status)}>
-              {workflow.status}
-            </Badge>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Bot className="size-4" />
-              <span>{agentName}</span>
-            </div>
-          </div>
-
-        <div className="mt-3 flex items-center justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
-            {workflow._id.slice(0, 8)}...
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onCopy(workflow._id);
-                }}
-              >
-                {isCopied ? (
-              <>
-                <Check className="size-3 text-green-500" />
-                <span className="text-green-500">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-3" />
-                Copy ID
-              </>
-            )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Copy workflow ID</TooltipContent>
-          </Tooltip>
-        </div>
-      </Card>
-    </motion.div>
+        </Card>
+      </motion.div>
     );
   }
 );
 
-WorkflowCard.displayName = "WorkflowCard";
+const VerticalWorkflowCard = memo(
+  ({
+    workflow,
+    agentName,
+    isCopied,
+    onCopy,
+    onEdit,
+    onDelete,
+    onUpdate,
+    onRenameSuccess,
+  }: {
+    workflow: Workflow;
+    agentName: string;
+    isCopied: boolean;
+    onCopy: (id: string) => void;
+    onEdit: (workflow: Workflow) => void;
+    onDelete: (workflow: Workflow) => void;
+    onUpdate: () => void;
+    onRenameSuccess: (id: string, newName: string) => void;
+  }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editName, setEditName] = useState(workflow.name);
+    const [isSaving, setIsSaving] = useState(false);
+    const { addToast } = useToast();
+
+    const handleSave = async () => {
+      if (editName.trim() === '') {
+        addToast({
+          type: 'error',
+          title: 'Validation Error',
+          description: 'Workflow name cannot be empty.',
+        });
+        setEditName(workflow.name);
+        setIsEditing(false);
+        return;
+      }
+      if (editName === workflow.name) {
+        setIsEditing(false);
+        return;
+      }
+      setIsSaving(true);
+      try {
+        const res = await fetch(apiUrl(`/workflows/${workflow._id}`), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
+          },
+          body: JSON.stringify({ name: editName }),
+        });
+        if (!res.ok) throw new Error('Update failed');
+        onUpdate();
+        onRenameSuccess(workflow._id, editName);
+        addToast({ type: 'success', title: 'Workflow renamed' });
+      } catch (err) {
+        console.error(err);
+        setEditName(workflow.name);
+        addToast({ type: 'error', title: 'Failed to rename workflow' });
+      } finally {
+        setIsSaving(false);
+        setIsEditing(false);
+      }
+    };
+
+    return (
+      <motion.div
+        whileHover={{ y: -2 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="group relative h-full"
+      >
+        <Card className="flex flex-col p-5 gap-4 bg-card hover:bg-accent/5 transition-colors overflow-hidden border-border/50 h-full">
+          {/* Top Row: Status & Actions */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={workflow.status as any} className="uppercase">
+                {workflow.status}
+              </StatusBadge>
+            </div>
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 rounded-md hover:bg-muted"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onCopy(workflow._id);
+                      }}
+                      aria-label="Copy workflow ID"
+                    >
+                      {isCopied ? (
+                        <Check className="size-3 text-green-500" />
+                      ) : (
+                        <Copy className="size-3 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Copy Workflow ID</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 rounded-md hover:bg-muted"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onEdit(workflow);
+                }}
+                aria-label="Edit workflow"
+              >
+                <Pencil className="size-3 text-muted-foreground" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 rounded-md hover:bg-muted text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(workflow);
+                }}
+                aria-label="Delete workflow"
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Title & ID */}
+          <div>
+            {isEditing ? (
+              <div className="flex items-center gap-2 mb-1">
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => {
+                    if (isEditing && !isSaving) handleSave();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSave();
+                    } else if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setEditName(workflow.name);
+                    }
+                  }}
+                  autoFocus
+                  disabled={isSaving}
+                  className="text-lg font-bold bg-background border border-input rounded px-2 py-0.5 flex-1"
+                />
+              </div>
+            ) : (
+              <Link
+                href={`/workflows/${workflow._id}`}
+                className="text-lg font-bold tracking-tight hover:text-primary transition-colors block truncate mb-1"
+                onDoubleClick={() => {
+                  setIsEditing(true);
+                  setEditName(workflow.name);
+                }}
+              >
+                {workflow.name}
+              </Link>
+            )}
+            <span className="text-[11px] text-muted-foreground font-mono tracking-wider">
+              ID: {workflow._id.substring(0, 8).toUpperCase()}-WF
+            </span>
+          </div>
+
+          {/* Middle Description Block */}
+          <div className="flex-1 flex flex-col gap-2 my-2 py-1 min-h-[120px]">
+            <p className="text-[13px] text-muted-foreground line-clamp-4 leading-relaxed">
+              {workflow.description || 'No description provided.'}
+            </p>
+            {agentName && (
+              <div className="flex items-center gap-1.5 mt-auto pt-2 opacity-80">
+                <Bot className="size-3.5 text-primary/70" />
+                <span className="text-[10px] font-medium tracking-wide text-foreground uppercase">
+                  {agentName}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Metrics Slots */}
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <div className="flex flex-col gap-1 bg-muted/10 p-3 rounded-lg border border-border/30">
+              <span className="text-[9px] font-bold text-muted-foreground tracking-widest uppercase">
+                Runtime
+              </span>
+              <span className="text-sm font-bold text-foreground">-</span>
+            </div>
+            <div className="flex flex-col gap-1 bg-muted/10 p-3 rounded-lg border border-border/30">
+              <span className="text-[9px] font-bold text-muted-foreground tracking-widest uppercase">
+                Success
+              </span>
+              <span className="text-sm font-bold text-foreground">-</span>
+            </div>
+          </div>
+        </Card>
+      </motion.div>
+    );
+  }
+);
+
+HorizontalWorkflowCard.displayName = 'HorizontalWorkflowCard';
+VerticalWorkflowCard.displayName = 'VerticalWorkflowCard';
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState<false | "blank" | "template">(false);
+  const [open, setOpen] = useState<false | 'blank' | 'template'>(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(null);
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [agentMap, setAgentMap] = useState<Record<string, string>>({});
   const { addToast } = useToast();
   const { setContext, clearContext } = useAssistantContext();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // ─── Filter State ───
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("newest");
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const statusFromUrl = searchParams.get('status');
+
+  const statusFilter =
+    statusFromUrl && STATUS_OPTIONS.includes(statusFromUrl) ? statusFromUrl : 'all';
+  const handleStatusChange = (status: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (status === 'all') {
+      params.delete('status');
+    } else {
+      params.set('status', status);
+    }
+
+    router.replace(`${pathname}?${params.toString()}`);
+  };
   const debouncedQuery = useDebounce(query, 300);
 
   const fetchAgents = useCallback(async () => {
-    const res = await fetch(apiUrl("/agents"), {
+    const res = await fetch(apiUrl('/agents'), {
       headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
+        Authorization: 'Bearer ' + localStorage.getItem('token'),
       },
     });
     const data = await res.json();
     if (data.ok) {
-      setAgents(data.agents);
       const map: Record<string, string> = {};
       data.agents.forEach((a: Agent) => {
         map[a._id] = a.name;
@@ -391,21 +704,19 @@ export default function WorkflowsPage() {
 
   const fetchWorkflows = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("/workflows"), {
+      const res = await fetch(apiUrl('/workflows'), {
         headers: {
-          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+          Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
         },
       });
       const data = await res.json();
-      
+
       // POINT 3 FIX: Safely extract array regardless of API wrapper
-      const workflowsArray = Array.isArray(data) 
-        ? data 
-        : (data.workflows || data.data || []);
-        
+      const workflowsArray = Array.isArray(data) ? data : data.workflows || data.data || [];
+
       setWorkflows(workflowsArray);
     } catch (err) {
-      console.error("Failed to fetch workflows:", err);
+      console.error('Failed to fetch workflows:', err);
     } finally {
       setLoading(false);
     }
@@ -425,8 +736,8 @@ export default function WorkflowsPage() {
 
   const getAgentName = useCallback(
     (agentId?: string | null) => {
-      if (!agentId) return "No agent";
-      return agentMap[agentId] ?? "Unknown agent";
+      if (!agentId) return 'No agent';
+      return agentMap[agentId] ?? 'Unknown agent';
     },
     [agentMap]
   );
@@ -434,12 +745,12 @@ export default function WorkflowsPage() {
   useEffect(() => {
     if (loading) return;
     setContext({
-      page: "workflows",
+      page: 'workflows',
       recentActivity: workflows.slice(0, 5).map((wf) => ({
-        type: "workflow",
+        type: 'workflow',
         name: wf.name,
         description: wf.description,
-        agent: getAgentName(wf.agentId) || "No agent",
+        agent: getAgentName(wf.agentId) || 'No agent',
         status: wf.status,
       })),
     });
@@ -456,9 +767,9 @@ export default function WorkflowsPage() {
         setTimeout(() => setCopiedId(null), 2000);
       } catch {
         addToast({
-          type: "error",
-          title: "Failed to copy",
-          description: "Could not copy workflow ID to clipboard.",
+          type: 'error',
+          title: 'Failed to copy',
+          description: 'Could not copy workflow ID to clipboard.',
         });
       }
     },
@@ -467,6 +778,9 @@ export default function WorkflowsPage() {
 
   const handleEditWorkflow = useCallback((workflow: Workflow) => {
     setEditingWorkflow(workflow);
+  }, []);
+  const handleRenameSuccess = useCallback((id: string, newName: string) => {
+    setEditingWorkflow((prev) => (prev && prev._id === id ? { ...prev, name: newName } : prev));
   }, []);
 
   // ─── Filter Logic ───
@@ -480,148 +794,170 @@ export default function WorkflowsPage() {
       );
     }
 
-    if (statusFilter !== "all") {
-      result = result.filter((w) => w.status === statusFilter);
+   if (statusFilter !== 'all') {
+      result = result.filter((w) => {
+        const effectiveStatus = w.status === 'pending' ? 'idle': w.status;
+        return effectiveStatus === statusFilter;
+      });
     }
 
     result.sort((a, b) => {
       // 1. Handle "Recently Updated" sorting
-      if (sortBy === "updated") {
+      if (sortBy === 'updated') {
         // Fallback: If updatedAt is missing, use createdAt. If both missing, use MongoID.
-        const updatedA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16));
-        const updatedB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16));
+        const updatedA = a.updatedAt
+          ? new Date(a.updatedAt).getTime()
+          : a.createdAt
+            ? new Date(a.createdAt).getTime()
+            : parseInt(a._id.substring(0, 8), 16);
+        const updatedB = b.updatedAt
+          ? new Date(b.updatedAt).getTime()
+          : b.createdAt
+            ? new Date(b.createdAt).getTime()
+            : parseInt(b._id.substring(0, 8), 16);
         return updatedB - updatedA; // Sort descending (newest updates first)
       }
 
       // 2. Handle standard Created dates (newest/oldest)
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : parseInt(a._id.substring(0, 8), 16);
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : parseInt(b._id.substring(0, 8), 16);
+      const dateA = a.createdAt
+        ? new Date(a.createdAt).getTime()
+        : parseInt(a._id.substring(0, 8), 16);
+      const dateB = b.createdAt
+        ? new Date(b.createdAt).getTime()
+        : parseInt(b._id.substring(0, 8), 16);
 
-      if (sortBy === "newest") return dateB - dateA;
-      if (sortBy === "oldest") return dateA - dateB;
-      if (sortBy === "alphabetical") return (a.name || "").localeCompare(b.name || "");
+      if (sortBy === 'newest') return dateB - dateA;
+      if (sortBy === 'oldest') return dateA - dateB;
+      if (sortBy === 'alphabetical') return (a.name || '').localeCompare(b.name || '');
       return 0;
     });
 
     return result;
   }, [workflows, debouncedQuery, statusFilter, sortBy]);
 
-  const hasActiveFilters = query || statusFilter !== "all" || sortBy !== "newest";
+  const hasActiveFilters = query || statusFilter !== 'all' || sortBy !== 'newest';
 
   function clearFilters() {
-    setQuery("");
-    setStatusFilter("all");
-    setSortBy("newest");
-  }
+    setQuery('');
+    setSortBy('newest');
 
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.delete('status');
+
+    router.replace(`${pathname}?${params.toString()}`);
+  }
   return (
-    <AuthGuard>
-      <div className="flex min-h-screen">
-        <AppSidebar />
-        <main
-          className="flex-1 transition-[padding] duration-300"
-          style={{ paddingLeft: "var(--sidebar-width, 256px)" }}
-        >
-          <div className="p-8">
-            <div className="mb-8 flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold">Workflows</h1>
-                <p className="mt-2 text-muted-foreground">
-                  Manage your AI automation workflows
-                </p>
-              </div>
+    <AuthenticatedLayout>
+      <>
+        <PageHeader
+          title="Workflows"
+          description="Manage your automation engine. Monitor real-time performance, optimize logic branches, and scale your agent deployments."
+          breadcrumbs={
+            <div className="text-[10px] font-bold tracking-[0.15em] text-muted-foreground uppercase flex items-center gap-2">
+              <span className="text-muted-foreground/60">SYSTEM</span>
+              <span className="text-muted-foreground/30">›</span>
+              <span className="text-primary/80">WORKFLOWS</span>
+            </div>
+          }
+          actions={
+            <>
+              <Button
+                variant="outline"
+                className="bg-transparent border-border/40 hover:bg-muted/10 h-10 px-4"
+              >
+                <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                Filter
+              </Button>
+              <Button
+                variant="outline"
+                className="bg-transparent border-border/40 hover:bg-muted/10 h-10 px-4"
+              >
+                <Download className="mr-2 h-4 w-4 text-muted-foreground" />
+                Export
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 size-4" />
-                    Create Workflow
-                    <ChevronDown className="ml-2 size-4 opacity-70" />
+                  <Button className="h-10 px-4">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Workflow
+                    <ChevronDown className="ml-2 h-3 w-3 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setOpen("blank")}>
-                    Blank Workflow
+                <DropdownMenuContent align="end" className="w-50">
+                  <DropdownMenuItem
+                    onClick={() => setOpen('blank')}
+                    className="py-2.5 cursor-pointer"
+                  >
+                    <Plus className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">Blank Workflow</span>
+                      <span className="text-xs text-muted-foreground">Start from scratch</span>
+                    </div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOpen("template")}>
-                    Choose Template
+                  <DropdownMenuItem
+                    onClick={() => setOpen('template')}
+                    className="py-2.5 cursor-pointer"
+                  >
+                    <Copy className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">Use Template</span>
+                      <span className="text-xs text-muted-foreground">Start from a preset</span>
+                    </div>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
+            </>
+          }
+        />
 
-            {loading ? (
-              <p className="opacity-70">Loading workflows...</p>
-            ) : workflows.length === 0 ? (
-              // Hard Empty State (No workflows exist in database at all)
-              <div className="py-12 max-w-2xl mx-auto">
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <GitFork />
-                    </EmptyMedia>
-                    <EmptyTitle>No workflows yet</EmptyTitle>
-                    <EmptyDescription>
-                      Create your first automated workflow or build from a
-                      template configuration to begin setting up agent jobs.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <div className="flex gap-4">
-                      <Button onClick={() => setOpen("blank")}>
-                        Create Blank Workflow
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpen("template")}
-                      >
-                        Choose Template
-                      </Button>
-                    </div>
-                  </EmptyContent>
-                </Empty>
-              </div>
-            ) : (
-              // Workflows exist! Show the new Toolbar and Grid
-              <div className="space-y-6">
-                
-                {/* ─── Control Toolbar ─── */}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                  <div className="relative flex-1">
-                    <svg
-                      className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                    </svg>
-                    <Input
-                      type="text"
-                      placeholder="Search workflows..."
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      className="pl-9 bg-background"
-                    />
-                  </div>
-
+        {loading ? (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i} className="p-6">
+                <div className="space-y-4">
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-8 w-24" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* ─── Control Toolbar ─── */}
+            <FilterBar
+              search={
+                <div className="relative w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search workflows..."
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="pl-9 bg-background/50 border-border/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-primary transition-colors h-10 w-full"
+                  />
+                </div>
+              }
+              filters={
+                <>
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 capitalize"
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    className="h-10 rounded-md border border-input/40 bg-background/50 px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-2 capitalize transition-colors"
                   >
                     {STATUS_OPTIONS.map((s) => (
                       <option key={s} value={s}>
-                        {s === "all" ? "All statuses" : s}
+                        {s === 'all' ? 'All statuses' : s}
                       </option>
                     ))}
                   </select>
-
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    className="h-10 rounded-md border border-input/40 bg-background/50 px-3 py-1 text-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-2 transition-colors"
                   >
                     {SORT_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -629,51 +965,91 @@ export default function WorkflowsPage() {
                       </option>
                     ))}
                   </select>
-                </div>
+                </>
+              }
+            />
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    Showing {filteredWorkflows.length} of {workflows.length} workflows
-                  </span>
-                  {hasActiveFilters && (
-                    <button onClick={clearFilters} className="text-primary hover:underline">
-                      Clear filters
-                    </button>
-                  )}
-                </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Showing {filteredWorkflows.length} of {workflows.length} workflows
+              </span>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="text-primary hover:underline">
+                  Clear filters
+                </button>
+              )}
+            </div>
 
-                {/* ─── Filtered Grid or Empty State ─── */}
-                {filteredWorkflows.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-                    <p className="text-sm font-medium">No workflows found</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Try adjusting your search or filters.
-                    </p>
-                    <Button variant="ghost" size="sm" className="mt-4" onClick={clearFilters}>
+            {/* ─── Filtered Grid or Empty State ─── */}
+            {filteredWorkflows.length === 0 ? (
+              <EmptyState
+                icon={Search}
+                title="No workflows found"
+                description={
+                  hasActiveFilters
+                    ? "Try adjusting your search or filters to find what you're looking for."
+                    : "You haven't created any workflows yet. Get started by creating your first automation."
+                }
+                primaryAction={
+                  hasActiveFilters ? (
+                    <Button variant="secondary" onClick={clearFilters}>
                       Clear filters
                     </Button>
+                  ) : (
+                    <Button onClick={() => setOpen('blank')}>
+                      <Plus className="mr-2 size-4" />
+                      Create Workflow
+                    </Button>
+                  )
+                }
+              />
+            ) : (
+              <div className="flex flex-col gap-8">
+                {/* Running Workflows */}
+                {filteredWorkflows.filter((w) => w.status === 'running').length > 0 && (
+                  <div className="flex flex-col gap-6">
+                    {filteredWorkflows
+                      .filter((w) => w.status === 'running')
+                      .map((workflow) => (
+                        <HorizontalWorkflowCard
+                          key={workflow._id}
+                          workflow={workflow}
+                          agentName={getAgentName(workflow.agentId)}
+                          isCopied={copiedId === workflow._id}
+                          onCopy={copyId}
+                          onEdit={handleEditWorkflow}
+                          onDelete={handleDeleteClick}
+                          onUpdate={fetchWorkflows}
+                          onRenameSuccess={handleRenameSuccess}
+                        />
+                      ))}
                   </div>
-                ) : (
+                )}
+
+                {/* Other Workflows */}
+                {filteredWorkflows.filter((w) => w.status !== 'running').length > 0 && (
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredWorkflows.map((workflow) => (
-                      <WorkflowCard
-                        key={workflow._id}
-                        workflow={workflow}
-                        agentName={getAgentName(workflow.agentId)}
-                        isCopied={copiedId === workflow._id}
-                        onCopy={copyId}
-                        onEdit={handleEditWorkflow}
-                        onDelete={handleDeleteClick}
-                        onUpdate={fetchWorkflows}
-                      />
-                    ))}
+                    {filteredWorkflows
+                      .filter((w) => w.status !== 'running')
+                      .map((workflow) => (
+                        <VerticalWorkflowCard
+                          key={workflow._id}
+                          workflow={workflow}
+                          agentName={getAgentName(workflow.agentId)}
+                          isCopied={copiedId === workflow._id}
+                          onCopy={copyId}
+                          onEdit={handleEditWorkflow}
+                          onDelete={handleDeleteClick}
+                          onUpdate={fetchWorkflows}
+                          onRenameSuccess={handleRenameSuccess}
+                        />
+                      ))}
                   </div>
                 )}
               </div>
             )}
           </div>
-        </main>
-
+        )}
         <CreateWorkflowModal
           mode={open}
           onOpenChange={() => setOpen(false)}
@@ -689,8 +1065,8 @@ export default function WorkflowsPage() {
           close={() => setWorkflowToDelete(null)}
           refresh={fetchWorkflows}
         />
-      </div>
-    </AuthGuard>
+      </>
+    </AuthenticatedLayout>
   );
 }
 
@@ -700,7 +1076,7 @@ function CreateWorkflowModal({
   onOpenChange,
   refresh,
 }: {
-  mode: false | "blank" | "template";
+  mode: false | 'blank' | 'template';
   onOpenChange: () => void;
   refresh: () => void;
 }) {
@@ -711,35 +1087,32 @@ function CreateWorkflowModal({
     e.preventDefault();
     setLoading(true);
     const form = e.currentTarget;
-    const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-    const description = (
-      form.elements.namedItem("description") as HTMLTextAreaElement
-    ).value;
+    const name = (form.elements.namedItem('name') as HTMLInputElement).value;
+    const description = (form.elements.namedItem('description') as HTMLTextAreaElement).value;
     try {
-      const res = await fetch(apiUrl("/workflows"), {
-        method: "POST",
+      const res = await fetch(apiUrl('/workflows'), {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
         },
         body: JSON.stringify({ name, description }),
       });
-      if (!res.ok) throw new Error("Failed to create workflow");
+      if (!res.ok) throw new Error('Failed to create workflow');
       addToast({
-        type: "success",
-        title: "Workflow created",
-        description: "Your workflow was created successfully.",
+        type: 'success',
+        title: 'Workflow created',
+        description: 'Your workflow was created successfully.',
       });
       refresh();
       form.reset();
       onOpenChange();
     } catch (err) {
-      console.error("Create workflow failed", err);
+      console.error('Create workflow failed', err);
       addToast({
-        type: "error",
-        title: "Failed to create workflow",
-        description:
-          "There was an error creating the workflow. Please try again.",
+        type: 'error',
+        title: 'Failed to create workflow',
+        description: 'There was an error creating the workflow. Please try again.',
       });
     } finally {
       setLoading(false);
@@ -748,23 +1121,16 @@ function CreateWorkflowModal({
 
   return (
     <Dialog open={!!mode} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-w-5xl xl:max-w-6xl">
         <DialogHeader>
           <DialogTitle>Create Workflow</DialogTitle>
-          <DialogDescription>
-            Create a blank workflow or start from a template.
-          </DialogDescription>
+          <DialogDescription>Create a blank workflow or start from a template.</DialogDescription>
         </DialogHeader>
-        {mode === "blank" && (
+        {mode === 'blank' && (
           <form onSubmit={createWorkflow} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="name">Workflow name</Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="e.g. Daily Report Generator"
-                required
-              />
+              <Input id="name" name="name" placeholder="e.g. Daily Report Generator" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
@@ -785,9 +1151,7 @@ function CreateWorkflowModal({
             </DialogFooter>
           </form>
         )}
-        {mode === "template" && (
-          <TemplateSelector refresh={refresh} close={onOpenChange} />
-        )}
+        {mode === 'template' && <TemplateSelector refresh={refresh} close={onOpenChange} />}
       </DialogContent>
     </Dialog>
   );
@@ -802,15 +1166,15 @@ function EditWorkflowModal({
   close: () => void;
   refresh: () => void;
 }) {
-  const [name, setName] = useState(workflow?.name ?? "");
-  const [description, setDescription] = useState(workflow?.description ?? "");
+  const [name, setName] = useState(workflow?.name ?? '');
+  const [description, setDescription] = useState(workflow?.description ?? '');
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
     if (workflow) {
       setName(workflow.name);
-      setDescription(workflow.description ?? "");
+      setDescription(workflow.description ?? '');
     }
   }, [workflow]);
 
@@ -819,19 +1183,19 @@ function EditWorkflowModal({
     setLoading(true);
     try {
       const res = await fetch(apiUrl(`/workflows/${workflow._id}`), {
-        method: "PUT",
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
         },
         body: JSON.stringify({ name, description }),
       });
-      if (!res.ok) throw new Error("Update failed");
-      addToast({ type: "success", title: "Workflow updated" });
+      if (!res.ok) throw new Error('Update failed');
+      addToast({ type: 'success', title: 'Workflow updated' });
       refresh();
       close();
     } catch {
-      addToast({ type: "error", title: "Failed to update workflow" });
+      addToast({ type: 'error', title: 'Failed to update workflow' });
     } finally {
       setLoading(false);
     }
@@ -842,9 +1206,7 @@ function EditWorkflowModal({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Edit Workflow</DialogTitle>
-          <DialogDescription>
-            Update the workflow name and description.
-          </DialogDescription>
+          <DialogDescription>Update the workflow name and description.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -853,10 +1215,7 @@ function EditWorkflowModal({
           </div>
           <div>
             <Label>Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
         </div>
         <DialogFooter>
@@ -889,20 +1248,20 @@ function DeleteWorkflowModal({
     setLoading(true);
     try {
       const res = await fetch(apiUrl(`/workflows/${workflow._id}`), {
-        method: "DELETE",
+        method: 'DELETE',
         headers: {
-          Authorization: "Bearer " + (localStorage.getItem("token") ?? ""),
+          Authorization: 'Bearer ' + (localStorage.getItem('token') ?? ''),
         },
       });
 
-      if (!res.ok) throw new Error("Delete failed");
+      if (!res.ok) throw new Error('Delete failed');
 
-      addToast({ type: "success", title: "Workflow deleted" });
+      addToast({ type: 'success', title: 'Workflow deleted' });
       refresh();
       close();
     } catch (err) {
-      console.error("Delete failed:", err);
-      addToast({ type: "error", title: "Failed to delete workflow" });
+      console.error('Delete failed:', err);
+      addToast({ type: 'error', title: 'Failed to delete workflow' });
     } finally {
       setLoading(false);
     }
@@ -923,7 +1282,8 @@ function DeleteWorkflowModal({
         <DialogHeader>
           <DialogTitle>Delete Workflow</DialogTitle>
           <DialogDescription className="text-foreground mt-4">
-            Are you sure you want to delete workflow <strong>"{workflow?.name}"</strong>? This action cannot be undone.
+            Are you sure you want to delete workflow <strong>&quot;{workflow?.name}&quot;</strong>?
+            This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -931,7 +1291,7 @@ function DeleteWorkflowModal({
             Cancel
           </Button>
           <Button variant="destructive" onClick={confirmDelete} disabled={loading}>
-            {loading ? "Deleting..." : "Delete"}
+            {loading ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -939,21 +1299,15 @@ function DeleteWorkflowModal({
   );
 }
 
-function TemplateSelector({
-  refresh,
-  close,
-}: {
-  refresh: () => void;
-  close: () => void;
-}) {
-  const [templates, setTemplates] = useState<any[]>([]);
+function TemplateSelector({ refresh, close }: { refresh: () => void; close: () => void }) {
+  const [templates, setTemplates] = useState<Template[]>([]);
   const { addToast } = useToast();
 
   useEffect(() => {
     async function fetchTemplates() {
-      const res = await fetch(apiUrl("/templates"), {
+      const res = await fetch(apiUrl('/templates'), {
         headers: {
-          Authorization: "Bearer " + localStorage.getItem("token"),
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
         },
       });
       const data = await res.json();
@@ -964,16 +1318,16 @@ function TemplateSelector({
 
   async function applyTemplate(id: string) {
     const res = await fetch(apiUrl(`/templates/import/${id}`), {
-      method: "POST",
+      method: 'POST',
       headers: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
+        Authorization: 'Bearer ' + localStorage.getItem('token'),
       },
     });
     if (!res.ok) {
-      addToast({ type: "error", title: "Failed to create workflow" });
+      addToast({ type: 'error', title: 'Failed to create workflow' });
       return;
     }
-    addToast({ type: "success", title: "Workflow created from template" });
+    addToast({ type: 'success', title: 'Workflow created from template' });
     refresh();
     close();
   }
@@ -987,36 +1341,25 @@ function TemplateSelector({
         >
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-lg font-semibold">
-              <span className="text-xl">{t.icon ?? "⚙️"}</span>
+              <span className="text-xl">{t.icon ?? '⚙️'}</span>
               {t.name}
             </div>
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {t.description}
-            </p>
+            <p className="text-sm text-muted-foreground line-clamp-2">{t.description}</p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {t.category && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge
-                      variant="secondary"
-                      className={getCategoryBadgeClass(t.category)}
-                    >
+                    <Badge variant="secondary" className={getCategoryBadgeClass(t.category)}>
                       {t.category}
                     </Badge>
                   </TooltipTrigger>
-                  <TooltipContent side="top">
-                    Category: {t.category}
-                  </TooltipContent>
+                  <TooltipContent side="top">Category: {t.category}</TooltipContent>
                 </Tooltip>
               )}
               {t.stepsCount && <span>{t.stepsCount} steps</span>}
             </div>
           </div>
-          <Button
-            size="sm"
-            className="mt-4 w-full"
-            onClick={() => applyTemplate(t.id)}
-          >
+          <Button size="sm" className="mt-4 w-full" onClick={() => applyTemplate(t.id)}>
             Use Template
           </Button>
         </Card>

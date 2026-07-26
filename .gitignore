@@ -84,3 +84,5 @@ infra/secrets/
 # Test Artifacts
 # =========================
 coverage/
+# next-agents-md
+.next-docs/

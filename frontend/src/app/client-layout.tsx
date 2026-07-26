@@ -1,19 +1,20 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import AuthProvider from "@/context/AuthContext";
-import { ThemeProvider, useTheme } from "next-themes";
-import { PageTransition } from "@/components/page-transition";
-import { ToastProvider } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster";
-import { AssistantShell } from "@/components/assistant/assistant-shell";
-import { AssistantProvider } from "@/context/assistant-context";
-import { Analytics } from "@vercel/analytics/next";
-import { usePathname } from "next/navigation";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { SettingsProvider, useSettings } from "@/context/SettingsContext";
+import { useState, useEffect } from 'react';
+import AuthProvider from '@/context/AuthContext';
+import { ThemeProvider, useTheme } from 'next-themes';
+import { PageTransition } from '@/components/page-transition';
+import { ToastProvider } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
+import { AssistantShell } from '@/components/assistant/assistant-shell';
+import { AssistantProvider } from '@/context/assistant-context';
+import { Analytics } from '@vercel/analytics/next';
+import { usePathname } from 'next/navigation';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { SettingsProvider, useSettings } from '@/context/SettingsContext';
+import { MessageCircle } from 'lucide-react';
 
-const PUBLIC_ROUTES = ["/login", "/register"];
+const PUBLIC_ROUTES = ['/login', '/register', '/privacy'];
 
 function InnerLayout({ children }: { children: React.ReactNode }) {
   const { settings, loading } = useSettings();
@@ -41,17 +42,14 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
 
       {!isPublicRoute && (
         <>
-          <AssistantShell
-            open={assistantOpen}
-            onClose={() => setAssistantOpen(false)}
-          />
+          <AssistantShell open={assistantOpen} onClose={() => setAssistantOpen(false)} />
 
           {!assistantOpen && (
             <button
               onClick={() => setAssistantOpen(true)}
-              className="fixed bottom-6 right-6 z-40 rounded-full bg-primary px-4 py-3 text-primary-foreground shadow-lg hover:opacity-90 transition"
+              className="fixed bottom-6 right-6 z-40 flex items-center rounded-full bg-foreground px-4 py-3 font-semibold text-background shadow-lg hover:opacity-90 transition"
             >
-              💬 Help
+              <MessageCircle className="w-4 h-4 mr-2" /> Help
             </button>
           )}
         </>
@@ -63,11 +61,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ClientLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <SettingsProvider>

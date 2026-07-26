@@ -1,7 +1,8 @@
-"use client";
+'use client';
 
-import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import type { ReactNode } from 'react';
+import { createContext, useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 
 type AuthUser = {
   id?: string;
@@ -23,7 +24,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 
 function decodeJwt(jwt: string) {
   try {
-    return JSON.parse(atob(jwt.split(".")[1]));
+    return JSON.parse(atob(jwt.split('.')[1]));
   } catch {
     return null;
   }
@@ -40,29 +41,13 @@ function isTokenExpired(jwt: string) {
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const saved = localStorage.getItem("token");
-    return saved && !isTokenExpired(saved) ? saved : null;
-  });
-
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window === "undefined") return null;
-    const saved = localStorage.getItem("token");
-    if (!saved || isTokenExpired(saved)) return null;
-    const payload = decodeJwt(saved);
-    if (!payload) return null;
-    return {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-    };
-  });
-
-  const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const hydrateUser = useCallback((jwt: string) => {
     const payload = decodeJwt(jwt);
+
     if (!payload) {
       setUser(null);
       return;
@@ -78,17 +63,36 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("token");
-    router.replace("/login");
+    localStorage.removeItem('token');
+    router.replace('/login');
   }, [router]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("token");
-    if (saved && isTokenExpired(saved)) {
-      localStorage.removeItem("token");
-    }
-  }, []);
+    let active = true;
+
+    queueMicrotask(() => {
+      if (!active) return;
+
+      const saved = localStorage.getItem('token');
+
+      if (saved && isTokenExpired(saved)) {
+        localStorage.removeItem('token');
+        setLoading(false);
+        return;
+      }
+
+      if (saved) {
+        setToken(saved);
+        hydrateUser(saved);
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [hydrateUser]);
 
   /* ---- Auto logout on token expiry (CRITICAL) ---- */
   useEffect(() => {
@@ -110,6 +114,29 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [token, logout]);
 
+  /* ---- Intercept 401 responses globally to clear stale sessions ---- */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const originalFetch = window.fetch;
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await originalFetch(input, init);
+      if (response.status === 401) {
+        const urlStr =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        // Ignore token errors for login or registration requests to allow inline form error handling
+        if (!urlStr.includes('/auth/login') && !urlStr.includes('/auth/register')) {
+          logout();
+        }
+      }
+      return response;
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [logout]);
+
   function login(jwt: string) {
     if (isTokenExpired(jwt)) {
       logout();
@@ -117,11 +144,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setToken(jwt);
-    localStorage.setItem("token", jwt);
+    localStorage.setItem('token', jwt);
     hydrateUser(jwt);
-    router.replace("/");
+    router.replace('/');
   }
-
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout, loading }}>

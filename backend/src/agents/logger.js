@@ -37,6 +37,15 @@ async function writeLog(
   level = "info",
   meta = {}
 ) {
+  const tracePrefix = meta.traceId ? `[Trace: ${meta.traceId}] ` : '';
+  const consoleMsg = `${tracePrefix}${message}`;
+
+  switch (level) {
+    case 'error': console.error(`❌ ${consoleMsg}`); break;
+    case 'warn': console.warn(`⚠️ ${consoleMsg}`); break;
+    default: console.log(`ℹ️ ${consoleMsg}`); break;
+  }
+
   try {
     await Log.create({
       message,
