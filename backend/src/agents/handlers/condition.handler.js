@@ -25,12 +25,13 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
       }
     );
 
-    // Strict parsing: never infer negation from surrounding text.
-    // Grab the first true|false token and compare exactly.
-    const text = String(aiResult.text || '').toLowerCase().trim();
-    const token = text.match(/\b(true|false)\b/i)?.[1]?.toLowerCase();
+    // Strict parsing: accept only a direct true response.
+    // Ambiguous or negated text must not become truthy through substring matching.
+    const text = String(aiResult.text || '')
+      .toLowerCase()
+      .trim();
 
-    evaluation = token === 'true';
+    evaluation = /^true[\s.!?]*$/.test(text);
   }
 
   return createStepResult({
@@ -43,4 +44,3 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
 }
 
 module.exports = { execute };
-
