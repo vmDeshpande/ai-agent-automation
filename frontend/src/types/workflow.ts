@@ -138,6 +138,86 @@ export interface WorkflowAgent {
   };
 }
 
+// ============================================================
+// Issue #283 — workflow overview aggregated response
+// ============================================================
+
+export type WorkflowOverviewVariable = {
+  name: string;
+  isSecret: boolean;
+  value: string | null;
+  updatedAt: string;
+};
+
+export type WorkflowOverviewTriggerSchedule = {
+  _id: string;
+  name: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+};
+
+export type WorkflowOverviewTriggerWebhook = {
+  _id: string;
+  name: string;
+  source: string;
+  active: boolean;
+  hasSecret: boolean;
+  createdAt: string;
+};
+
+export type WorkflowOverviewTokenUsage = {
+  totalTokens: number;
+  totalCalls: number;
+  providers: {
+    provider: string;
+    totalTokens: number;
+    promptTokens: number;
+    completionTokens: number;
+    calls: number;
+    lastCallAt: string | null;
+  }[];
+};
+
+export type WorkflowOverviewMetrics = {
+  successRate: number | null;
+  avgDurationMs: number | null;
+  totalRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+  lastRunAt: string | null;
+};
+
+export type WorkflowOverviewPayload = {
+  _id: string;
+  name: string;
+  description: string;
+  status: string;
+  agentId: string | null;
+  creatorName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  workflowId: string;
+};
+
+export type WorkflowOverviewResponse = {
+  ok: boolean;
+  workflow: WorkflowOverviewPayload;
+  metrics: WorkflowOverviewMetrics;
+  tokenUsage: WorkflowOverviewTokenUsage;
+  variables: WorkflowOverviewVariable[];
+  triggers: {
+    primary: 'schedule' | 'webhook' | 'manual';
+    scheduledCount: number;
+    webhookCount: number;
+    schedules: WorkflowOverviewTriggerSchedule[];
+    webhooks: WorkflowOverviewTriggerWebhook[];
+  };
+  lastUpdatedAt: string;
+};
+
 export interface CreateWorkflowPayload {
   name: string;
   description?: string;

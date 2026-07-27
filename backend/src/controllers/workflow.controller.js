@@ -106,7 +106,16 @@ async function updateWorkflow(req, res) {
     if (workflow.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'forbidden' });
 
-    const allowed = ['name', 'description', 'status', 'tasks', 'agentId', 'apiSettings'];
+    const allowed = [
+      'name',
+      'description',
+      'status',
+      'tasks',
+      'agentId',
+      'apiSettings',
+      'variables',
+      'trigger',
+    ];
 
     if (req.body.apiSettings !== undefined) {
       const { enabled, endpointName } = req.body.apiSettings;
@@ -185,7 +194,7 @@ async function addTaskToWorkflow(req, res) {
     const { taskId } = req.body;
 
     if (!taskId) {
-      return res.status(400).json({ error: "taskId_required" });
+      return res.status(400).json({ error: 'taskId_required' });
     }
 
     // Verify the task exists
@@ -194,7 +203,7 @@ async function addTaskToWorkflow(req, res) {
     if (!task) {
       return res.status(404).json({
         ok: false,
-        error: "task_not_found",
+        error: 'task_not_found',
       });
     }
 
@@ -202,7 +211,7 @@ async function addTaskToWorkflow(req, res) {
     if (task.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         ok: false,
-        error: "forbidden",
+        error: 'forbidden',
       });
     }
 
@@ -210,7 +219,7 @@ async function addTaskToWorkflow(req, res) {
     if (workflow.tasks.includes(task._id)) {
       return res.json({
         ok: true,
-        message: "Task already exists in workflow",
+        message: 'Task already exists in workflow',
         workflow,
       });
     }
@@ -364,15 +373,15 @@ async function updateWorkflowSteps(req, res) {
     // Validate edges
     edges = Array.isArray(edges)
       ? edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: e.label || '',
-        condition: e.condition || null,
-        caseValue: e.caseValue || null,
-        animated: e.animated ?? true,
-        style: e.style || { strokeWidth: 2 },
-      }))
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: e.label || '',
+          condition: e.condition || null,
+          caseValue: e.caseValue || null,
+          animated: e.animated ?? true,
+          style: e.style || { strokeWidth: 2 },
+        }))
       : [];
 
     workflow.metadata = normalizeWorkflowMetadata({ steps, edges });
@@ -636,12 +645,24 @@ async function generateWorkflowAI(req, res) {
       let toolParams = {};
 
       switch (step.type) {
-        case 'llm': finalType = 'LLM'; break;
-        case 'http': finalType = 'HTTP'; break;
-        case 'delay': finalType = 'Delay'; break;
-        case 'condition': finalType = 'Condition'; break;
-        case 'switch': finalType = 'Switch'; break;
-        case 'document_query': finalType = 'Document'; break;
+        case 'llm':
+          finalType = 'LLM';
+          break;
+        case 'http':
+          finalType = 'HTTP';
+          break;
+        case 'delay':
+          finalType = 'Delay';
+          break;
+        case 'condition':
+          finalType = 'Condition';
+          break;
+        case 'switch':
+          finalType = 'Switch';
+          break;
+        case 'document_query':
+          finalType = 'Document';
+          break;
         case 'email':
           finalType = 'Tool';
           toolParams = { tool: 'email' };

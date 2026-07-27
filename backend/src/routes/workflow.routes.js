@@ -25,6 +25,14 @@ const {
   rollbackWorkflow,
 } = require('../controllers/workflowVersion.controller');
 
+// Issue #283 — Variables CRUD + overview aggregator.
+const {
+  listVariables,
+  replaceVariables,
+  deleteVariable,
+} = require('../controllers/workflowVariables.controller');
+const { getWorkflowOverview } = require('../controllers/workflowOverview.controller');
+
 // Require auth for all workflow routes
 router.use(authMiddleware);
 
@@ -48,6 +56,14 @@ router.post('/:id/rollback/:versionId', rollbackWorkflow);
 
 // Action endpoints
 router.post('/:id/clone', cloneWorkflow);
+
+// Issue #283 — overview aggregator + variables CRUD. Must be declared
+// before the generic `:id` GET so Express doesn't redirect an
+// `/overview` request into `getWorkflow`.
+router.get('/:id/overview', getWorkflowOverview);
+router.get('/:id/variables', listVariables);
+router.put('/:id/variables', replaceVariables);
+router.delete('/:id/variables/:name', deleteVariable);
 
 // THEN the generic ID routes
 router.get('/:id', getWorkflow);
