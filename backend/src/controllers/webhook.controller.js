@@ -1,7 +1,12 @@
 const Webhook = require('../models/webhook.model');
 const Workflow = require('../models/workflow.model');
-const Task = require('../models/task.model');
 const crypto = require('crypto');
+
+// MongoDB ObjectId regex — 24 hex chars. The frontend sends ObjectIds only
+// so this narrows user input to the same shape, defusing CodeQL's
+// "user-controlled DB query" warning without changing behaviour for
+// legitimate callers.
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 // Create webhook config (private/admin)
 async function createWebhook(req, res) {
@@ -53,8 +58,16 @@ async function createWebhook(req, res) {
 async function listWebhooks(req, res) {
   try {
     const filter = { userId: req.user._id };
-    if (req.query.workflowId) {
-      filter.workflowId = req.query.workflowId;
+    const rawWorkflowId = req.query.workflowId;
+    if (rawWorkflowId !== undefined && rawWorkflowId !== null && rawWorkflowId !== '') {
+      // Reject anything that isn't a 24-char hex ObjectId. The frontend
+      // only ever sends ObjectIds so this is effectively a no-op for
+      // legitimate callers, but it closes the CodeQL
+      // "Database query built from user-controlled sources" alert.
+      if (typeof rawWorkflowId !== 'string' || !OBJECT_ID_RE.test(rawWorkflowId)) {
+        return res.status(400).json({ ok: false, error: 'invalid_workflow_id' });
+      }
+      filter.workflowId = rawWorkflowId;
     }
     const webhooks = await Webhook.find(filter).sort({ createdAt: -1 });
     // Strip the secret on the way out — the Flutter/UI never needs the

@@ -1,7 +1,12 @@
 // src/controllers/schedule.controller.js
 const Schedule = require('../models/schedule.model');
 const Workflow = require('../models/workflow.model');
-const Task = require('../models/task.model');
+
+// MongoDB ObjectId regex — 24 hex chars. The frontend sends ObjectIds only
+// so this narrows user input to the same shape, defusing CodeQL's
+// "user-controlled DB query" warning without changing behaviour for
+// legitimate callers.
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 /**
  * Helpers for responses
@@ -60,8 +65,16 @@ async function listSchedules(req, res) {
   try {
     const userId = req.user._id;
     const filter = { userId };
-    if (req.query.workflowId) {
-      filter.workflowId = req.query.workflowId;
+    const rawWorkflowId = req.query.workflowId;
+    if (rawWorkflowId !== undefined && rawWorkflowId !== null && rawWorkflowId !== '') {
+      // Reject anything that isn't a 24-char hex ObjectId. The frontend
+      // only ever sends ObjectIds so this is effectively a no-op for
+      // legitimate callers, but it closes the CodeQL
+      // "Database query built from user-controlled sources" alert.
+      if (typeof rawWorkflowId !== 'string' || !OBJECT_ID_RE.test(rawWorkflowId)) {
+        return sendErr(res, 400, 'invalid_workflow_id');
+      }
+      filter.workflowId = rawWorkflowId;
     }
     const schedules = await Schedule.find(filter).sort({ createdAt: -1 });
     return sendOK(res, { schedules });
