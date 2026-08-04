@@ -1,5 +1,6 @@
 const Task = require("../models/task.model");
 const Workflow = require("../models/workflow.model"); // import workflow model
+const Log = require("../models/log.model");
 const { getWorkflowGraph } = require("../utils/workflowMetadata");
 // -----------------------------
 // Utility: Response Helpers
@@ -142,6 +143,80 @@ async function getTask(req, res) {
     return sendOK(res, { task: t });
   } catch (err) {
     console.error("getTask error:", err);
+    return sendError(res, 500, "server_error");
+  }
+}
+
+// -----------------------------
+// Export Task Logs
+// GET /api/tasks/:id/logs?format=text|json
+// Returns full step-by-step logs for a task as a downloadable file.
+// -----------------------------
+async function getTaskLogs(req, res) {
+  try {
+    const userId = req.user._id;
+    const taskId = req.params.id;
+    const format = (req.query.format || "text").toLowerCase();
+
+    const t = await Task.findById(taskId);
+    if (!t) return sendError(res, 404, "not_found");
+    if (t.userId.toString() !== userId.toString())
+      return sendError(res, 403, "forbidden");
+
+    const logs = await Log.find({ taskId }).sort({ createdAt: 1 }).lean();
+
+    if (format === "json") {
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="task-${taskId}-logs.json"`,
+      );
+      return res.send(
+        JSON.stringify(
+          {
+            taskId,
+            taskName: t.name,
+            taskStatus: t.status,
+            exportedAt: new Date().toISOString(),
+            logCount: logs.length,
+            logs: logs.map((l) => ({
+              timestamp: l.createdAt,
+              level: l.level,
+              message: l.message,
+              workerId: l.workerId,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    // Default: plain text
+    const lines = logs.map((l) => {
+      const ts = l.createdAt instanceof Date ? l.createdAt.toISOString() : String(l.createdAt);
+      return `[${ts}] [${l.level || "info"}] ${l.message}`;
+    });
+    const header = [
+      `Task: ${t.name}`,
+      `Task ID: ${taskId}`,
+      `Status: ${t.status}`,
+      `Exported: ${new Date().toISOString()}`,
+      `Log entries: ${logs.length}`,
+      "",
+      "----------------------------------------",
+      "",
+    ].join("\n");
+    const body = lines.length > 0 ? lines.join("\n") + "\n" : "(no log entries)\n";
+
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="task-${taskId}-logs.txt"`,
+    );
+    return res.send(header + body);
+  } catch (err) {
+    console.error("getTaskLogs error:", err);
     return sendError(res, 500, "server_error");
   }
 }
@@ -471,6 +546,7 @@ module.exports = {
   createTask,
   listTasks,
   getTask,
+  getTaskLogs,
   updateTask,
   deleteTask,
   approveTask,
