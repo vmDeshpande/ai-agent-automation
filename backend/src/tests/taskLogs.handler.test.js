@@ -24,6 +24,10 @@ const request = require('supertest');
 const Task = require('../models/task.model');
 const Log = require('../models/log.model');
 const { getTaskLogs } = require('../controllers/task.controller');
+// Match the production route registration (task.routes.js) so the CodeQL
+// `MissingRateLimit` alert doesn't fire on the test stub's `app.get(...)`.
+// In production the same `expensiveLimiter` middleware is wired in.
+const { expensiveLimiter } = require('../middleware/rateLimit.middleware');
 
 const USER_ID = new mongoose.Types.ObjectId('111111111111111111111111');
 
@@ -35,7 +39,7 @@ function buildApp() {
     req.user = { _id: USER_ID };
     next();
   });
-  app.get('/api/tasks/:id/logs', getTaskLogs);
+  app.get('/api/tasks/:id/logs', expensiveLimiter, getTaskLogs);
   return app;
 }
 
