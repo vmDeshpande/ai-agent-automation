@@ -169,6 +169,7 @@ export default function TaskDetailPage() {
   const [approvalFeedback, setApprovalFeedback] = useState('');
   const [isResuming, setIsResuming] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
+  const [isExportingLogs, setIsExportingLogs] = useState(false);
 
   async function handleResumeTask(resumeStepId?: string) {
     if (!task) return;
@@ -237,6 +238,45 @@ export default function TaskDetailPage() {
       });
     } finally {
       setIsRerunning(false);
+    }
+  }
+
+  async function handleExportLogs(format: 'text' | 'json' = 'text') {
+    if (!task) return;
+    setIsExportingLogs(true);
+    try {
+      const res = await fetch(apiUrl(`/tasks/${task._id}/logs?format=${format}`), {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer ' + localStorage.getItem('token'),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to export logs');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `task-${task._id}-logs.${format === 'json' ? 'json' : 'txt'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      addToast({
+        title: 'Logs exported',
+        description: `Downloaded task-${task._id}-logs.${format === 'json' ? 'json' : 'txt'}`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      addToast({
+        title: 'Error',
+        description: err.message || 'Failed to export logs',
+        type: 'error',
+      });
+    } finally {
+      setIsExportingLogs(false);
     }
   }
 
@@ -503,9 +543,14 @@ export default function TaskDetailPage() {
               <Play className="mr-2 size-3.5" />
               Rerun
             </Button>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportLogs('text')}
+              disabled={isExportingLogs}
+            >
               <Download className="mr-2 size-3.5" />
-              Export
+              {isExportingLogs ? 'Exporting…' : 'Export'}
             </Button>
           </div>
         </div>

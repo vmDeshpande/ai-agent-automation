@@ -1,9 +1,11 @@
 const router = require('express').Router();
 const authMiddleware = require('../middleware/auth.middleware');
+const { expensiveLimiter } = require('../middleware/rateLimit.middleware');
 const {
   createTask,
   listTasks,
   getTask,
+  getTaskLogs,
   updateTask,
   deleteTask,
   approveTask,
@@ -15,6 +17,7 @@ const {
 router.post('/', authMiddleware, createTask);
 router.get('/', authMiddleware, listTasks);
 router.get('/:id', authMiddleware, getTask);
+router.get('/:id/logs', authMiddleware, expensiveLimiter, getTaskLogs);
 router.put('/:id', authMiddleware, updateTask);
 router.delete('/:id', authMiddleware, deleteTask);
 
