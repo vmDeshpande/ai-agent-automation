@@ -144,7 +144,16 @@ async function deleteVariable(req, res) {
   }
 }
 
-module.exports = { listVariables, replaceVariables, deleteVariable };
+module.exports = {
+  listVariables,
+  replaceVariables,
+  deleteVariable,
+  // Surface `publicShape` as a public export so `workflowOverview.controller`
+  // can shape variables the same way (see review feedback on PR #309).
+  // The `__test__` re-export below is kept for backward compatibility with
+  // any test that imports `module.exports.__test__.publicShape`.
+  publicShape,
+};
 
 // Surface the helpers so the overview controller can compute "what
 // variables would this task see?" without duplicating the rule set.
