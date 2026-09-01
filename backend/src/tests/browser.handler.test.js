@@ -2,14 +2,18 @@ const { execute } = require('../agents/handlers/browser.handler');
 const { dispatchTool } = require('../tools/registry');
 
 jest.mock('../tools/registry', () => ({
-  dispatchTool: jest.fn()
+  dispatchTool: jest.fn(),
+}));
+
+jest.mock('../agents/utils/ssrfProtection', () => ({
+  validateUrl: jest.fn(() => Promise.resolve('https://example.com')),
 }));
 
 describe('Browser Handler', () => {
   it('should wrap and dispatch the browser tool', async () => {
     dispatchTool.mockResolvedValue('Mocked browser result');
 
-    const step = { config: { action: 'evaluate' } };
+    const step = { config: { action: 'evaluate', url: 'https://example.com' } };
     const validatedStepId = 'browser-123';
 
     const result = await execute(step, {}, null, validatedStepId, 5000);

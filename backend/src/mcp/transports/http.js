@@ -1,16 +1,20 @@
-const { McpError } = require("../errors");
+const { McpError } = require('../errors');
+const { validateUrl } = require('../../agents/utils/ssrfProtection');
 
 function createHttpTransport(server) {
   try {
     const {
       StreamableHTTPClientTransport,
-    } = require("@modelcontextprotocol/sdk/client/streamableHttp.js");
+    } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
     const headers = {
       ...(server.headers || {}),
     };
 
-    return new StreamableHTTPClientTransport(new URL(server.url), {
+    const serverUrl = server.url || '';
+    const validatedUrl = validateUrl(serverUrl);
+
+    return new StreamableHTTPClientTransport(new URL(validatedUrl), {
       requestInit: {
         headers,
       },
@@ -19,7 +23,7 @@ function createHttpTransport(server) {
     throw new McpError(
       `Failed to initialize streamable HTTP transport for "${server.id}": ${error.message}`,
       {
-        code: "MCP_TRANSPORT_INIT_FAILED",
+        code: 'MCP_TRANSPORT_INIT_FAILED',
         status: 500,
       }
     );

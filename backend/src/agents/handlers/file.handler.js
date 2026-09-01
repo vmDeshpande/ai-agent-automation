@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { resolveWorkflowFilePath } = require('../utils/fileResolver');
+const { resolveWorkflowFilePath, getWorkflowBaseDir } = require('../utils/fileResolver');
 const { interpolate } = require('../utils/interpolate');
 const { createStepResult } = require('../utils/stepResult');
 
@@ -12,7 +12,7 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
     recursive: true,
   });
 
-const content = interpolate(config.content || context.last?.output || '', context);
+  const content = interpolate(config.content || context.last?.output || '', context);
 
   switch (config.action) {
     case 'read':
@@ -20,7 +20,7 @@ const content = interpolate(config.content || context.last?.output || '', contex
         stepId: validatedStepId,
         type: 'file',
         success: true,
-        output: fs.readFileSync(filePath, 'utf8')
+        output: fs.readFileSync(filePath, 'utf8'),
       });
     case 'append':
       fs.appendFileSync(filePath, content);
@@ -32,6 +32,7 @@ const content = interpolate(config.content || context.last?.output || '', contex
       fs.rmSync(filePath, { force: true });
       break;
     case 'list': {
+      const baseDir = getWorkflowBaseDir();
       let targetDir = filePath;
       try {
         if (!fs.statSync(filePath).isDirectory()) {
@@ -41,11 +42,25 @@ const content = interpolate(config.content || context.last?.output || '', contex
         targetDir = path.dirname(filePath);
       }
 
+      const relativeTarget = path.relative(baseDir, targetDir);
+      if (
+        relativeTarget === '' ||
+        relativeTarget.startsWith('..') ||
+        path.isAbsolute(relativeTarget)
+      ) {
+        return createStepResult({
+          stepId: validatedStepId,
+          type: 'file',
+          success: false,
+          output: 'Listing the root sandbox directory is not allowed',
+        });
+      }
+
       return createStepResult({
         stepId: validatedStepId,
         type: 'file',
         success: true,
-        output: fs.readdirSync(targetDir)
+        output: fs.readdirSync(targetDir),
       });
     }
     default:
@@ -53,7 +68,7 @@ const content = interpolate(config.content || context.last?.output || '', contex
         stepId: validatedStepId,
         type: 'file',
         success: false,
-        output: `Unsupported action: ${config.action}`
+        output: `Unsupported action: ${config.action}`,
       });
   }
 

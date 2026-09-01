@@ -1,10 +1,10 @@
 const { execute } = require('../agents/handlers/file.handler');
 const fs = require('fs');
 
-
 jest.mock('fs');
 jest.mock('../agents/utils/fileResolver', () => ({
-  resolveWorkflowFilePath: jest.fn((p) => `/mocked/safe/path/${p}`)
+  resolveWorkflowFilePath: jest.fn((p) => `/mocked/safe/path/${p}`),
+  getWorkflowBaseDir: jest.fn(() => '/mocked/safe/path'),
 }));
 
 describe('File Handler', () => {
@@ -51,7 +51,9 @@ describe('File Handler', () => {
     });
 
     it('should fallback to parent directory if statSync throws an error (path does not exist yet)', async () => {
-      fs.statSync.mockImplementation(() => { throw new Error('ENOENT: no such file or directory'); });
+      fs.statSync.mockImplementation(() => {
+        throw new Error('ENOENT: no such file or directory');
+      });
       fs.readdirSync.mockReturnValue(['existing.txt']);
 
       const step = { config: { action: 'list', path: 'new-dir/phantom-file.txt' } };

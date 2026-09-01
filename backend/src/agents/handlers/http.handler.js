@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { interpolate } = require('../utils/interpolate');
 const { createStepResult } = require('../utils/stepResult');
+const { validateUrl } = require('../utils/ssrfProtection');
 
 async function execute(step, context, agent, validatedStepId, timeoutMs) {
   const config = step.config || step;
@@ -29,12 +30,16 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   const method = (config.method || 'GET').toLowerCase();
   const hasBody = !['get', 'head'].includes(method);
 
+  const rawUrl = interpolate(config.url || '', context);
+  const sanitizedUrl = await validateUrl(rawUrl);
+
   const requestConfig = {
     method,
-    url: interpolate(config.url || '', context),
+    url: sanitizedUrl,
     headers: { ...(config.headers || {}), ...headers },
     timeout: config.timeout || step.timeout || 30000,
     validateStatus: () => true,
+    maxRedirects: 0,
   };
 
   if (hasBody && parsedBody !== null) {
@@ -43,10 +48,29 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
 
   const response = await axios(requestConfig);
 
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.location;
+    if (location) {
+      try {
+        const redirectUrl = new URL(location, sanitizedUrl);
+        await validateUrl(redirectUrl.toString());
+      } catch (err) {
+        return createStepResult({
+          stepId: validatedStepId,
+          type: 'http',
+          input: rawUrl,
+          output: null,
+          error: `SSRF blocked: redirect to private address denied (${err.message})`,
+          success: false,
+        });
+      }
+    }
+  }
+
   return createStepResult({
     stepId: validatedStepId,
     type: 'http',
-    input: interpolate(config.url || '', context),
+    input: rawUrl,
     output: response.data,
     success: response.status >= 200 && response.status < 300,
   });

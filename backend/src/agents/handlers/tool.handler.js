@@ -3,15 +3,18 @@ const { createStepResult } = require('../utils/stepResult');
 
 async function execute(step, context, agent, validatedStepId, timeoutMs) {
   const config = step.config || step;
-  let stepType = String(step.type || '').toLowerCase();
+  const stepType = String(step.type || '').toLowerCase();
   let resolvedStepType = stepType;
-  
+
   if (stepType === 'tool') {
     const subTool = config.tool || step.tool;
     if (subTool) {
       resolvedStepType = String(subTool).toLowerCase();
     } else {
-      if (config.path || (config.action && ['read','write','append','remove','list'].includes(config.action))) {
+      if (
+        config.path ||
+        (config.action && ['read', 'write', 'append', 'remove', 'list'].includes(config.action))
+      ) {
         resolvedStepType = 'file';
       } else if (config.to || config.subject) {
         resolvedStepType = 'email';

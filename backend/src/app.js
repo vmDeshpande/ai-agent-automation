@@ -1,5 +1,5 @@
 const express = require('express');
-const cors = require('cors');
+const corsMiddleware = require('./middleware/cors.middleware');
 const authRoutes = require('./routes/auth.routes.js');
 const taskRoutes = require('./routes/task.routes.js');
 const workflowRoutes = require('./routes/workflow.routes');
@@ -30,7 +30,7 @@ const app = express();
 
 app.set('trust proxy', 1);
 
-app.use(cors());
+app.use(corsMiddleware);
 app.use(helmetMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

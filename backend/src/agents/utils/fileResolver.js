@@ -1,5 +1,9 @@
 const path = require('path');
 
+function getWorkflowBaseDir() {
+  return path.resolve(process.cwd(), 'runtime', 'workflow-files');
+}
+
 function resolveWorkflowFilePath(filePath) {
   if (typeof filePath !== 'string' || filePath.trim() === '') {
     throw new Error('Invalid file path');
@@ -13,7 +17,7 @@ function resolveWorkflowFilePath(filePath) {
     throw new Error('Invalid file path: absolute paths are not allowed');
   }
 
-  const workflowBaseDir = path.resolve(process.cwd(), 'runtime', 'workflow-files');
+  const workflowBaseDir = getWorkflowBaseDir();
   const resolvedPath = path.resolve(workflowBaseDir, filePath);
   const relativePath = path.relative(workflowBaseDir, resolvedPath);
 
@@ -24,4 +28,7 @@ function resolveWorkflowFilePath(filePath) {
   return resolvedPath;
 }
 
-module.exports = { resolveWorkflowFilePath };
+module.exports = {
+  resolveWorkflowFilePath,
+  getWorkflowBaseDir,
+};

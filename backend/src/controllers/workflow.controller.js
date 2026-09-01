@@ -10,6 +10,7 @@ const { migrateWorkflowSteps } = require('../workflow/migrations');
 const { getToolMetadata } = require('../tools/registry');
 const { coreNodes } = require('../workflow/coreNodesRegistry');
 const { generateWorkflowGraph } = require('../services/workflowGenerator.service');
+const { validateWorkflowSteps } = require('../utils/workflowValidation');
 
 const RESERVED_WORDS = [
   'steps',
@@ -46,6 +47,14 @@ async function createWorkflow(req, res) {
     if (metadata && metadata.steps) {
       try {
         validateAliases(metadata.steps);
+      } catch (err) {
+        return res.status(400).json({ ok: false, error: err.message });
+      }
+    }
+
+    if (metadata && metadata.steps && metadata.steps.length > 0) {
+      try {
+        validateWorkflowSteps(metadata.steps, metadata.edges || []);
       } catch (err) {
         return res.status(400).json({ ok: false, error: err.message });
       }
@@ -185,7 +194,7 @@ async function addTaskToWorkflow(req, res) {
     const { taskId } = req.body;
 
     if (!taskId) {
-      return res.status(400).json({ error: "taskId_required" });
+      return res.status(400).json({ error: 'taskId_required' });
     }
 
     // Verify the task exists
@@ -194,7 +203,7 @@ async function addTaskToWorkflow(req, res) {
     if (!task) {
       return res.status(404).json({
         ok: false,
-        error: "task_not_found",
+        error: 'task_not_found',
       });
     }
 
@@ -202,7 +211,7 @@ async function addTaskToWorkflow(req, res) {
     if (task.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         ok: false,
-        error: "forbidden",
+        error: 'forbidden',
       });
     }
 
@@ -210,7 +219,7 @@ async function addTaskToWorkflow(req, res) {
     if (workflow.tasks.includes(task._id)) {
       return res.json({
         ok: true,
-        message: "Task already exists in workflow",
+        message: 'Task already exists in workflow',
         workflow,
       });
     }
@@ -262,6 +271,12 @@ async function runWorkflowNow(req, res) {
 
     if (steps.length === 0) {
       return res.status(400).json({ ok: false, error: 'workflow_has_no_steps' });
+    }
+
+    try {
+      validateWorkflowSteps(steps, edges);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err.message });
     }
 
     const task = await Task.create({
@@ -316,6 +331,13 @@ async function updateWorkflowSteps(req, res) {
       return res.status(400).json({ ok: false, error: err.message });
     }
 
+    // Validate step configurations
+    try {
+      validateWorkflowSteps(steps, edges);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err.message });
+    }
+
     // Persistently normalize steps: move any root-level tool fields into config: {}
     // This permanently upgrades legacy workflow documents on every save.
     const BASE_STEP_PROPS = new Set(['stepId', 'name', 'type', 'position', 'config', 'alias']);
@@ -364,15 +386,15 @@ async function updateWorkflowSteps(req, res) {
     // Validate edges
     edges = Array.isArray(edges)
       ? edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: e.label || '',
-        condition: e.condition || null,
-        caseValue: e.caseValue || null,
-        animated: e.animated ?? true,
-        style: e.style || { strokeWidth: 2 },
-      }))
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: e.label || '',
+          condition: e.condition || null,
+          caseValue: e.caseValue || null,
+          animated: e.animated ?? true,
+          style: e.style || { strokeWidth: 2 },
+        }))
       : [];
 
     workflow.metadata = normalizeWorkflowMetadata({ steps, edges });
@@ -442,6 +464,15 @@ async function cloneWorkflow(req, res) {
     if (clonedMetadata.steps) {
       try {
         validateAliases(clonedMetadata.steps);
+      } catch (err) {
+        return res.status(400).json({ ok: false, error: err.message });
+      }
+    }
+
+    // Validate step configurations in cloned workflow
+    if (clonedMetadata.steps && clonedMetadata.steps.length > 0) {
+      try {
+        validateWorkflowSteps(clonedMetadata.steps, clonedMetadata.edges || []);
       } catch (err) {
         return res.status(400).json({ ok: false, error: err.message });
       }
@@ -517,6 +548,12 @@ async function runWorkflowPartial(req, res) {
 
     if (steps.length === 0) {
       return res.status(400).json({ ok: false, error: 'workflow_has_no_steps' });
+    }
+
+    try {
+      validateWorkflowSteps(steps, edges);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err.message });
     }
 
     const startNodeExists = steps.some((s) => (s.stepId || s.id || s.name) === startNodeId);
@@ -636,12 +673,24 @@ async function generateWorkflowAI(req, res) {
       let toolParams = {};
 
       switch (step.type) {
-        case 'llm': finalType = 'LLM'; break;
-        case 'http': finalType = 'HTTP'; break;
-        case 'delay': finalType = 'Delay'; break;
-        case 'condition': finalType = 'Condition'; break;
-        case 'switch': finalType = 'Switch'; break;
-        case 'document_query': finalType = 'Document'; break;
+        case 'llm':
+          finalType = 'LLM';
+          break;
+        case 'http':
+          finalType = 'HTTP';
+          break;
+        case 'delay':
+          finalType = 'Delay';
+          break;
+        case 'condition':
+          finalType = 'Condition';
+          break;
+        case 'switch':
+          finalType = 'Switch';
+          break;
+        case 'document_query':
+          finalType = 'Document';
+          break;
         case 'email':
           finalType = 'Tool';
           toolParams = { tool: 'email' };
