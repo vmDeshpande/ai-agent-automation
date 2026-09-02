@@ -465,10 +465,10 @@ protected API / internal endpoint
 
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
-### P1 — High Priority (12 items)
+### P1 — High Priority (11 remaining items)
 
 - Broad CORS on API (partially addressed by P0-2; API CORS now restricted)
-- Missing CSP/HSTS in Helmet
+- Missing CSP/HSTS in Helmet — **backend Express JSON API completed; frontend CSP is a separate future task**
 - No schema validation on all API inputs
 - Document upload lacks size/MIME enforcement
 - Webhook public endpoint lacks payload size limit
@@ -479,6 +479,7 @@ P0 completion does not mean the platform is fully production-hardened. Remaining
 - Frontend API URL hardcoded to localhost in Docker
 - No WebSocket room authorization
 - a2aSecret exposed in team creation response
+- Frontend CSP not configured (Next.js layer)
 
 ### P2 — Medium Priority (10 items)
 

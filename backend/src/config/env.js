@@ -38,6 +38,12 @@ const envSchema = z.object({
     z.coerce.number().int().positive('MONGO_MIN_POOL_SIZE must be a positive number')
   ),
 
+  // docker mongodb auth
+  MONGO_ROOT_USER: optionalString(),
+  MONGO_ROOT_PASSWORD: optionalString(),
+  MONGO_APP_USER: optionalString(),
+  MONGO_APP_PASSWORD: optionalString(),
+
   // auth
   JWT_SECRET: z
     .string({

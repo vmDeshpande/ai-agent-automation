@@ -356,6 +356,10 @@ Common backend variables live in [backend/.env.example](backend/.env.example). D
 | --- | --- | --- |
 | `JWT_SECRET` | Yes | Signs user authentication tokens. Use a long random value. |
 | `MONGO_URI` | Yes | MongoDB connection string. Docker sets this for the internal Mongo service. |
+| `MONGO_ROOT_USER` | Yes (Docker) | MongoDB root username for Docker initialization. |
+| `MONGO_ROOT_PASSWORD` | Yes (Docker) | MongoDB root password for Docker initialization. |
+| `MONGO_APP_USER` | Yes (Docker) | MongoDB application username with least-privilege access to `ai-agent` database. |
+| `MONGO_APP_PASSWORD` | Yes (Docker) | MongoDB application password for `MONGO_APP_USER`. |
 | `OPENAI_API_KEY` | Optional | OpenAI models and embeddings. |
 | `GROQ_API_KEY` | Optional | Groq-hosted models. |
 | `GEMINI_API_KEY` | Optional | Google Gemini models and embeddings. |

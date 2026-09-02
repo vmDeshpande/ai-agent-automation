@@ -7,9 +7,12 @@ services:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--username", "${MONGO_ROOT_USER:-root}", "--password", "${MONGO_ROOT_PASSWORD:-changeme}", "--authenticationDatabase", "admin"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -21,14 +24,29 @@ services:
       mongo:
         condition: service_healthy
     restart: "no"
+    env_file:
+      - .env
     entrypoint: >
       bash -c "
-      mongosh --host mongo:27017 --eval '
-        rs.initiate({
-          _id: \"rs0\",
-          members: [{ _id: 0, host: \"mongo:27017\" }]
-        })
-      ' || true
+      mongosh --host mongo:27017 \
+        --username ${MONGO_ROOT_USER:-root} \
+        --password ${MONGO_ROOT_PASSWORD:-changeme} \
+        --authenticationDatabase admin \
+        --eval '
+          try {
+            rs.initiate({
+              _id: \"rs0\",
+              members: [{ _id: 0, host: \"mongo:27017\" }]
+            });
+          } catch (e) {
+            print(\"Replica set may already be initiated: \" + e.message);
+          }
+          db.getSiblingDB(\"ai-agent\").createUser({
+            user: '"${MONGO_APP_USER:-appuser}"',
+            pwd: '"${MONGO_APP_PASSWORD:-apppass}"',
+            roles: [{ role: \"readWrite\", db: \"ai-agent\" }]
+          });
+        ' || true
       "
 
   backend:

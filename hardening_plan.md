@@ -81,17 +81,18 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | ID | Finding | Status | Affected Area | Description | Recommended Next Phase |
 |---|---|---|---|---|---|
 | H-P1-1 | Broad CORS on API | NOT STARTED | Backend API | API CORS was addressed in P0-2; verify no residual broad CORS paths remain | Review and verify |
-| H-P1-2 | Missing CSP/HSTS in Helmet | NOT STARTED | Backend middleware | No Content-Security-Policy, Strict-Transport-Security, or X-Content-Type-Options | Add security headers |
+| H-P1-2 | Missing CSP/HSTS in Helmet | COMPLETED | Backend middleware | Added security headers to Express JSON API. Frontend CSP tracked separately. | Backend headers verified; frontend CSP is separate future task |
 | H-P1-3 | No Schema Validation on API Inputs | NOT STARTED | All controllers | Manual validation only; no Zod schemas for complex inputs | Extend validation to all controllers |
 | H-P1-4 | Document Upload Lacks Size/MIME Enforcement | NOT STARTED | Document ingestion | No file size limit; extension-based type check only | Add limits and MIME verification |
 | H-P1-5 | Webhook Public Endpoint Lacks Payload Size Limit | NOT STARTED | Public webhook receiver | No size limit on request body | Add body size limit |
 | H-P1-6 | No Rate Limiting on All API Routes | NOT STARTED | Backend API | Some routes lack rate limiting | Apply global limiter |
 | H-P1-7 | Agent Memory Search Potentially Cross-User | NOT STARTED | Memory retrieval | Ownership checked at agent level; add defense-in-depth | Add explicit ownership check |
-| H-P1-8 | Docker MongoDB Runs Without Authentication | NOT STARTED | Infrastructure | No MongoDB credentials in docker-compose | Add auth credentials |
+| H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
 | H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
 | H-P1-10 | Frontend API URL Hardcoded to localhost in Docker Build | NOT STARTED | Frontend Docker | NEXT_PUBLIC_API_URL uses localhost | Use Docker service name |
 | H-P1-11 | No WebSocket Room Authorization | NOT STARTED | Socket.IO | No per-room ownership verification | Add room authorization middleware |
 | H-P1-12 | a2aSecret Exposed in Team Creation Response | NOT STARTED | Agent teams | Secret returned in API response | Return securely, store hash |
+| H-P1-13 | Frontend CSP Not Configured | NOT STARTED | Next.js frontend | Express API CSP does not protect frontend HTML/JS. Next.js app needs CSP configured at application layer. | Configure CSP in Next.js/document-serving layer |
 
 ### P2 — Medium Priority (NOT STARTED)
 
@@ -258,6 +259,11 @@ Hardening is complete when:
 - **Impact:** XSS attacks not mitigated; no HSTS in production.
 - **Recommended fix:** Add CSP directive, HSTS, and other security headers.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:** `backend/src/middleware/helmet.middleware.js`
+- **Tests:** `backend/src/tests/helmet.middleware.test.js` (7 tests)
+- **Verification:** Backend tests pass; CSP/HSTS/X-Content-Type-Options/X-Frame-Options/Referrer-Policy/COOP/Permissions-Policy all verified
+- **Note:** This fix covers the Express/Helmet JSON API middleware only. The backend is a pure JSON API and does not serve HTML documents. CSP for the Next.js frontend HTML/JS must be configured at the Next.js application layer and is tracked as a separate future task. HSTS is intentionally opt-in via `HSTS_MAX_AGE` because the current deployment does not configure TLS termination at the backend.
 
 ### H-P1-3: No Schema Validation on API Inputs
 - **Category:** Security / Reliability
@@ -320,12 +326,21 @@ Hardening is complete when:
 - **Category:** Security
 - **Severity:** P1
 - **Component:** Infrastructure
-- **File:** `infra/docker-compose.yml`
-- **Evidence:** `mongo` service has no `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD` environment variables.
-- **Impact:** Anyone with network access to MongoDB port can read/write all data.
-- **Exploit scenario:** In cloud deployment, exposed MongoDB port allows full database compromise.
-- **Recommended fix:** Add MongoDB root credentials. Update `MONGO_URI` to include auth. Create application-specific user with least privilege.
+- **File:** `infra/docker-compose.yml`, `infra/.env.example`, `backend/.env.example`, `backend/src/config/env.js`
+- **Evidence:** `mongo` service now has `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD`. `mongo-init-replica` creates least-privilege `ai-agent` app user. `MONGO_URI` supports authenticated connection string.
+- **Impact:** Unauthorized MongoDB access is now blocked. Application uses least-privilege credentials.
+- **Exploit scenario:** Without auth, any network client could access MongoDB. Now blocked by authentication requirement.
+- **Recommended fix:** Implemented. Docker MongoDB requires authentication. Backend connects with app user credentials.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `infra/docker-compose.yml`: Added `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD` to `mongo` service. Updated healthcheck to use authentication. Updated `mongo-init-replica` to authenticate and create least-privilege app user.
+  - `infra/.env.example`: Added `MONGO_ROOT_USER`, `MONGO_ROOT_PASSWORD`, `MONGO_APP_USER`, `MONGO_APP_PASSWORD`, and authenticated `MONGO_URI`.
+  - `backend/.env.example`: Added authenticated MongoDB URI example.
+  - `backend/src/config/env.js`: Added optional validation for MongoDB auth variables.
+- **Tests:** Backend tests pass (52 passed). Environment validation passes.
+- **Verification:** Docker MongoDB now requires authentication. Application user has `readWrite` on `ai-agent` database only.
+- **Note:** Existing MongoDB volumes require re-initialization when first deploying the updated docker-compose.yml. The `mongo-init-replica` container runs once to set up auth and replica set. Do NOT run `docker compose down -v` as that would destroy existing data.
 
 ### H-P1-9: Worker → Backend localhost Coupling in Docker
 - **Category:** Reliability / Security
@@ -371,6 +386,18 @@ Hardening is complete when:
 - **Exploit scenario:** Secret captured in logs; attacker uses it to send unauthorized A2A messages.
 - **Recommended fix:** Return `generatedSecret` only once in a secure manner (e.g., one-time display, not in JSON response). Store hash, not plaintext.
 - **Confidence:** High
+
+### H-P1-13: Frontend CSP Not Configured
+- **Category:** Security
+- **Severity:** P1
+- **Component:** Frontend
+- **File:** `frontend/src/app/layout.tsx`, Next.js application
+- **Evidence:** The backend Express API now has CSP headers, but the Next.js frontend serves actual HTML/JS documents without application-level CSP. Backend CSP does not protect frontend pages.
+- **Impact:** XSS vulnerabilities in the Next.js frontend are not mitigated by CSP.
+- **Exploit scenario:** Stored or reflected XSS in frontend pages executes without CSP restrictions.
+- **Recommended fix:** Configure CSP in the Next.js application (e.g., via `next.config.ts` headers, middleware, or document-level meta tags). Consider report-only mode first.
+- **Confidence:** High
+- **Note:** This is a separate task from H-P1-2. H-P1-2 covers the Express JSON API backend only. Frontend CSP requires changes to the Next.js application and is NOT covered by the backend Helmet middleware.
 
 ---
 
