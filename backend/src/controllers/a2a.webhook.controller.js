@@ -1,7 +1,32 @@
+const crypto = require('crypto');
 const AgentTeam = require('../models/agentTeam.model');
 const AgentSession = require('../models/agentSession.model');
 const MessageLog = require('../models/messageLog.model');
 const eventBroker = require('../agents/eventBroker');
+
+function hashA2ASecret(secret) {
+  return `sha256:${crypto.createHash('sha256').update(secret).digest('hex')}`;
+}
+
+function verifyA2ASecret(providedSecret, storedValue) {
+  if (!storedValue || !providedSecret) return false;
+
+  if (storedValue === providedSecret) {
+    return true;
+  }
+
+  if (storedValue.startsWith('sha256:')) {
+    const providedHash = hashA2ASecret(providedSecret);
+    const storedBuffer = Buffer.from(storedValue.slice(7), 'hex');
+    const providedBuffer = Buffer.from(providedHash.slice(7), 'hex');
+    return (
+      storedBuffer.length === providedBuffer.length &&
+      crypto.timingSafeEqual(storedBuffer, providedBuffer)
+    );
+  }
+
+  return false;
+}
 
 async function receiveAgentMessage(req, res) {
   try {
@@ -17,8 +42,17 @@ async function receiveAgentMessage(req, res) {
     const team = await AgentTeam.findById(teamId);
     if (!team) return res.status(404).json({ ok: false, error: 'team_not_found' });
 
-    if (!team.metadata || team.metadata.a2aSecret !== secret) {
+    const storedValue = team.metadata?.a2aSecretHash || team.metadata?.a2aSecret;
+    const isValid = verifyA2ASecret(secret, storedValue);
+
+    if (!isValid) {
       return res.status(403).json({ ok: false, error: 'invalid_secret' });
+    }
+
+    if (team.metadata?.a2aSecret && !team.metadata?.a2aSecretHash) {
+      team.metadata.a2aSecretHash = hashA2ASecret(team.metadata.a2aSecret);
+      delete team.metadata.a2aSecret;
+      await team.save();
     }
 
     const session = await AgentSession.findOne({ _id: sessionId, teamId, status: 'active' });

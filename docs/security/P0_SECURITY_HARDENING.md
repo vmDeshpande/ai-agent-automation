@@ -453,19 +453,124 @@ network request (axios / puppeteer / MCP transport)
 
 ```
 external request
-       ↓
+        ↓
 authentication / origin validation
-       ↓
+        ↓
 protected API / internal endpoint
 ```
 
----
+## P1 — High Priority Security Hardening
 
-## Remaining Hardening Work
+### H-P1-12 — A2A Secret Exposure
+
+#### Original Vulnerability
+
+The team creation API (`POST /api/agent-teams`) generated an A2A secret and returned it in the JSON response as `generatedSecret`. The same plaintext secret was stored in `team.metadata.a2aSecret` in MongoDB.
+
+This exposed the secret in:
+- HTTP response bodies
+- Browser history
+- Server/proxy logs
+- Monitoring systems
+
+Anyone with access to the secret could send unauthorized A2A messages to the team.
+
+#### How A2A Secrets Worked Before
+
+1. Client creates a team via `POST /api/agent-teams`
+2. Server generates a 32-byte random hex secret
+3. Server stores plaintext secret in `team.metadata.a2aSecret`
+4. Server returns the plaintext secret in the JSON response as `generatedSecret`
+5. External systems send A2A messages with the secret in the `x-a2a-secret` header
+6. Server compares the header directly against the stored plaintext
+
+#### What Changed
+
+**Team creation (`backend/src/controllers/agentTeam.controller.js`):**
+- The secret is still generated using cryptographically secure randomness (`crypto.randomBytes(32).toString('hex')`)
+- The plaintext secret is hashed using SHA-256 before storage
+- The hash is stored in `team.metadata.a2aSecretHash` with the format `sha256:<64-hex-chars>`
+- The plaintext secret is **never** returned in the API response
+- The plaintext secret is **never** stored in the database
+
+**A2A authentication (`backend/src/controllers/a2a.webhook.controller.js`):**
+- Incoming secrets from the `x-a2a-secret` header are hashed before comparison
+- The hash is compared against the stored `sha256:<hash>` using `crypto.timingSafeEqual`
+- This prevents timing side-channel attacks
+- Legacy plaintext secrets are still accepted for backward compatibility
+
+#### Where Secrets Are Stored Now
+
+- **New teams:** `team.metadata.a2aSecretHash` contains `sha256:<hash>`
+- **Legacy teams:** May still contain `team.metadata.a2aSecret` (plaintext) until first successful A2A authentication
+- **Never exposed:** The plaintext secret is never returned by any API endpoint
+
+#### How Incoming A2A Authentication Works
+
+1. Extract `x-a2a-secret` header from incoming request
+2. Load team from database
+3. Retrieve stored value: `team.metadata.a2aSecretHash` (new) or `team.metadata.a2aSecret` (legacy)
+4. If stored value is a hash (`sha256:` prefix):
+   - Hash the provided secret using SHA-256
+   - Compare using `crypto.timingSafeEqual` (constant-time)
+5. If stored value is plaintext (legacy):
+   - Compare directly
+   - On success: migrate to hash, delete plaintext
+6. Reject if invalid or missing
+
+#### Why Plaintext Secrets Are No Longer Returned
+
+Returning secrets in API responses creates multiple exposure vectors:
+- Logs capture the response body
+- Browser history stores the response
+- Proxy/gateway logs may record the full JSON
+- Debugging tools intercept and display the response
+
+By not returning the secret, the only secure copy remains with the authorized party who received it through a secure channel.
+
+#### Why SHA-256 Hashing Is Used
+
+SHA-256 is a one-way cryptographic hash function:
+- The plaintext secret cannot be recovered from the hash
+- Even if the database is compromised, attackers cannot derive the plaintext secret
+- The hash is deterministic: the same secret always produces the same hash
+- This allows verification without storing the plaintext
+
+#### Why Timing-Safe Comparison Is Used
+
+`crypto.timingSafeEqual` performs constant-time comparison:
+- Prevents timing side-channel attacks where an attacker measures response times to deduce the correct secret byte-by-byte
+- Standard `===` comparison may return early on the first mismatched byte, leaking information
+
+#### Legacy Plaintext Secret Migration
+
+Existing teams created before this fix may still have plaintext `a2aSecret` in MongoDB. The implementation handles this transparently:
+
+1. When an A2A request arrives with a legacy plaintext team:
+   - The secret is verified against the stored plaintext
+   - On successful verification:
+     - The plaintext is hashed
+     - The hash is stored in `metadata.a2aSecretHash`
+     - The plaintext is deleted from `metadata.a2aSecret`
+     - The team document is saved
+   - On failed verification:
+     - The plaintext is **not** modified
+     - The request is rejected
+2. Teams that never receive A2A traffic will retain their legacy plaintext value until manually migrated or recreated
+
+**Operational note:** This migration happens automatically during normal A2A traffic. No manual intervention is required. If immediate migration is desired for compliance, recreate the team using the updated API.
+
+#### Implementation Files
+
+- `backend/src/controllers/agentTeam.controller.js` — Team creation, secret hashing
+- `backend/src/controllers/a2a.webhook.controller.js` — A2A authentication, legacy migration
+- `backend/src/tests/agentTeam.security.test.js` — 8 security regression tests
+
+---
 
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
-### P1 — High Priority (11 remaining items)
+### P1 — High Priority (10 remaining items)
 
 - Broad CORS on API (partially addressed by P0-2; API CORS now restricted)
 - Missing CSP/HSTS in Helmet — **backend Express JSON API completed; frontend CSP is a separate future task**
@@ -478,7 +583,6 @@ P0 completion does not mean the platform is fully production-hardened. Remaining
 - Worker → Backend localhost coupling in Docker
 - Frontend API URL hardcoded to localhost in Docker
 - No WebSocket room authorization
-- a2aSecret exposed in team creation response
 - Frontend CSP not configured (Next.js layer)
 
 ### P2 — Medium Priority (10 items)

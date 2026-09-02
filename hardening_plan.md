@@ -91,7 +91,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
 | H-P1-10 | Frontend API URL Hardcoded to localhost in Docker Build | NOT STARTED | Frontend Docker | NEXT_PUBLIC_API_URL uses localhost | Use Docker service name |
 | H-P1-11 | No WebSocket Room Authorization | NOT STARTED | Socket.IO | No per-room ownership verification | Add room authorization middleware |
-| H-P1-12 | a2aSecret Exposed in Team Creation Response | NOT STARTED | Agent teams | Secret returned in API response | Return securely, store hash |
+| H-P1-12 | a2aSecret Exposed in Team Creation Response | COMPLETED | Agent teams | Secret no longer returned or stored in plaintext. SHA-256 hash stored, timing-safe verification, legacy migration. | Verified: 8 security tests passing, backend tests passing |
 | H-P1-13 | Frontend CSP Not Configured | NOT STARTED | Next.js frontend | Express API CSP does not protect frontend HTML/JS. Next.js app needs CSP configured at application layer. | Configure CSP in Next.js/document-serving layer |
 
 ### P2 — Medium Priority (NOT STARTED)
@@ -379,13 +379,24 @@ Hardening is complete when:
 - **Category:** Security
 - **Severity:** P1
 - **Component:** Agent teams
-- **File:** `backend/src/controllers/agentTeam.controller.js`
-- **Function:** `createTeam()`
-- **Evidence:** Line 34: `return res.status(201).json({ ok: true, team: teamResponse, generatedSecret: a2aSecret });`
-- **Impact:** Secret is exposed in API response, browser history, server logs, and potential proxy logs.
+- **File:** `backend/src/controllers/agentTeam.controller.js`, `backend/src/controllers/a2a.webhook.controller.js`
+- **Evidence:** Previously, `createTeam()` returned `generatedSecret` in the JSON response and stored plaintext `a2aSecret` in `team.metadata.a2aSecret`.
+- **Impact:** Secret exposed in API response, browser history, server logs, and proxy logs.
 - **Exploit scenario:** Secret captured in logs; attacker uses it to send unauthorized A2A messages.
 - **Recommended fix:** Return `generatedSecret` only once in a secure manner (e.g., one-time display, not in JSON response). Store hash, not plaintext.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - New A2A secrets are generated using cryptographically secure randomness (`crypto.randomBytes(32)`).
+  - Plaintext secrets are no longer returned by the team creation API.
+  - Plaintext secrets are no longer stored for newly created teams.
+  - Secrets are stored as SHA-256 hashes using the `sha256:<hash>` format in `metadata.a2aSecretHash`.
+  - Incoming A2A secrets are hashed and verified using constant-time comparison (`crypto.timingSafeEqual`).
+  - Legacy plaintext secrets are transparently migrated to hashes after successful authentication.
+  - Invalid and missing secrets are rejected with 403/401 responses.
+- **Tests:** `backend/src/tests/agentTeam.security.test.js` (8 tests)
+- **Verification:** 8 security tests passing; existing backend tests remain passing (52 passed, 15 suites).
+- **Note:** Existing teams created before this fix may still contain plaintext `a2aSecret`. The plaintext legacy value is migrated to a hash after the first successful A2A authentication. A wrong secret does not trigger migration. Teams that never receive A2A traffic may retain their legacy plaintext value until manually migrated or recreated.
 
 ### H-P1-13: Frontend CSP Not Configured
 - **Category:** Security

@@ -6,6 +6,10 @@ const Agent = require('../models/agent.model');
 const broker = require('../agents/eventBroker');
 const socketUtil = require('../utils/socket');
 
+function hashA2ASecret(secret) {
+  return `sha256:${crypto.createHash('sha256').update(secret).digest('hex')}`;
+}
+
 async function createTeam(req, res) {
   try {
     const { name, description, agents, externalAgents, topology, nodes, edges } = req.body;
@@ -13,6 +17,7 @@ async function createTeam(req, res) {
     if (!name) return res.status(400).json({ ok: false, error: 'name_required' });
 
     const a2aSecret = crypto.randomBytes(32).toString('hex');
+    const a2aSecretHash = hashA2ASecret(a2aSecret);
 
     const team = await AgentTeam.create({
       name,
@@ -23,15 +28,15 @@ async function createTeam(req, res) {
       topology: topology || 'mesh',
       nodes: nodes || [],
       edges: edges || [],
-      metadata: { a2aSecret },
+      metadata: { a2aSecretHash },
     });
 
     const teamResponse = team.toObject();
     if (teamResponse.metadata) {
-      delete teamResponse.metadata.a2aSecret;
+      delete teamResponse.metadata.a2aSecretHash;
     }
 
-    return res.status(201).json({ ok: true, team: teamResponse, generatedSecret: a2aSecret });
+    return res.status(201).json({ ok: true, team: teamResponse });
   } catch (err) {
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
@@ -135,7 +140,7 @@ async function runTeam(req, res) {
       userId: req.user._id,
       objective: input,
       status: 'active',
-      sharedState: {}
+      sharedState: {},
     });
 
     res.json({ ok: true, sessionId: session._id, workflowId: teamId });
@@ -149,7 +154,7 @@ async function runTeam(req, res) {
           to: { id: 'broadcast', type: 'internal' },
           type: 'user_prompt',
           content: { result: input },
-          status: 'delivered'
+          status: 'delivered',
         });
 
         broker.emit('NEW_SWARM_MESSAGE', msg._id);
@@ -166,7 +171,7 @@ async function runTeam(req, res) {
     } else {
       const syncEvent = `joined_${teamId}`;
       global.socketSync.once(syncEvent, triggerSwarm);
-      
+
       setTimeout(() => {
         global.socketSync.removeListener(syncEvent, triggerSwarm);
       }, 10000);
@@ -182,5 +187,5 @@ module.exports = {
   createSession,
   getSessionLogs,
   getDiscovery,
-  runTeam
+  runTeam,
 };
