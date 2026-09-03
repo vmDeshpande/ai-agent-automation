@@ -88,7 +88,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-6 | No Rate Limiting on All API Routes | COMPLETED | Backend API | Single API-wide baseline rate limiter applied at /api mount. Per-route duplicates removed to prevent double application. | Verified: 8 security tests passing |
 | H-P1-7 | Agent Memory Search Potentially Cross-User | COMPLETED | Memory retrieval | Added explicit ownership check at memoryService boundary | Verified: 10 security tests passing |
 | H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
-| H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
+| H-P1-9 | Worker → Backend localhost Coupling in Docker | COMPLETED | Worker runtime | Worker now uses BACKEND_INTERNAL_URL with Docker service hostname. Fallback port corrected from 5001 to 5000. URL resolution extracted to a standalone, unit-tested module. | Verified: 13 new tests passing, 75/75 full suite |
 | H-P1-10 | Frontend API URL Hardcoded to localhost in Docker Build | NOT STARTED | Frontend Docker | NEXT_PUBLIC_API_URL uses localhost | Use Docker service name |
 | H-P1-11 | No WebSocket Room Authorization | COMPLETED | Socket.IO | Server-side ownership verification for workflow/team war rooms. Token-required, Mongoose-based authorization with explicit forbidden response. | Verified: 8 security tests passing |
 | H-P1-12 | a2aSecret Exposed in Team Creation Response | COMPLETED | Agent teams | Secret no longer returned or stored in plaintext. SHA-256 hash stored, timing-safe verification, legacy migration. | Verified: 8 security tests passing, backend tests passing |
@@ -374,6 +374,17 @@ Hardening is complete when:
 - **Exploit scenario:** Fresh Docker deploy has no war-room progress; user thinks platform is broken.
 - **Recommended fix:** Set `BACKEND_INTERNAL_URL=http://backend:5000` in `docker-compose.yml`. Document in `infra/.env.example`.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/agents/backendHost.js` (new): standalone module exporting `resolveBackendHost(env)` — prefers `BACKEND_INTERNAL_URL`, strips trailing slashes, falls back to `http://localhost:${PORT||5000}`. Keeping it isolated avoids booting Mongo/telemetry/queue when unit-testing the resolution logic.
+  - `backend/src/agents/runner.js`: extracted URL resolution to `backendHost.js`; corrected the legacy fallback port from `5001` to `5000` (matching the backend's documented default and the `PORT: 5000` value used by the `backend` service in `docker-compose.yml`).
+  - `backend/src/config/env.js`: added `BACKEND_INTERNAL_URL` to the zod schema as optional, with an http(s) format check so a typo cannot silently break broadcasts.
+  - `infra/docker-compose.yml`: worker service `environment` block now sets `BACKEND_INTERNAL_URL: http://backend:5000`, so a fresh deploy works without any host-side `.env` configuration.
+  - `infra/.env.example`: documented `BACKEND_INTERNAL_URL` with the recommended Docker and local values and a comment explaining why `localhost` is wrong inside the worker container.
+  - `backend/.env.example`: documented `BACKEND_INTERNAL_URL` for local-dev users.
+- **Tests:** Added `backend/src/tests/runner.handler.test.js` with 13 tests covering: BACKEND_INTERNAL_URL precedence, trailing-slash stripping, whitespace-only fallback, localhost:5000 default, custom PORT, override beats PORT, URL path composition, 5001-regression (asserts the legacy wrong port is no longer used), Docker `backend:5000` resolution, and the env schema's accept/reject behavior for the new variable.
+- **Verification:** 13/13 new tests pass. Full backend suite: 17 suites, 75/75 pass. Lint clean for all changed files. `git diff --check` clean (only informational LF/CRLF warnings on the pre-existing mixed-EOL repo).
+- **Remaining risk:** If a future contributor overrides `BACKEND_INTERNAL_URL` in the host `.env` to a non-routable value, broadcasts will fail. The runner already logs `❌ Runner socket broadcast error` on failure, but the silent nature of the failure mode (war-room UI not updating) makes monitoring important. The docker-compose `environment:` block is authoritative for the in-Docker worker, so the host `.env` can only break the deployment if someone explicitly sets a bad value.
 
 ### H-P1-10: Frontend API URL Hardcoded to localhost in Docker Build
 - **Category:** Reliability / Security

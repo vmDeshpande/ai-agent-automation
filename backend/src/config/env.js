@@ -82,6 +82,14 @@ const envSchema = z.object({
     })
     .min(16, 'INTERNAL_AUTH_TOKEN must be at least 16 characters'),
 
+  // worker → backend internal broadcast URL.
+  // In Docker, set to http://backend:5000 (Docker service hostname).
+  // In local dev, the runner falls back to http://localhost:5000.
+  BACKEND_INTERNAL_URL: optionalString().refine(
+    (v) => !v || /^https?:\/\//i.test(v),
+    'BACKEND_INTERNAL_URL must be a valid http(s) URL'
+  ),
+
   // email
   EMAIL_HOST: optionalString(),
 

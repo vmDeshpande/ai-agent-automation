@@ -86,6 +86,10 @@ services:
       - .env
     environment:
       NODE_ENV: production
+      # Worker → backend internal broadcasts must use the Docker service
+      # hostname `backend`, not localhost (which inside the worker
+      # container would refer to the worker itself).
+      BACKEND_INTERNAL_URL: http://backend:5000
     depends_on:
       mongo:
         condition: service_healthy

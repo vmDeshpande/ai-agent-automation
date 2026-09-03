@@ -8,6 +8,7 @@ const { claimNextTask, completeTask } = require('./queueService');
 const { executeStep } = require('./executor');
 const telemetryService = require('../services/telemetry.service');
 const LockManager = require('../services/lockManager.service');
+const { resolveBackendHost } = require('./backendHost');
 const WORKER_ID = process.env.WORKER_ID || 'agent-1';
 require('dotenv').config();
 
@@ -58,8 +59,7 @@ async function emitProgress(workflowId, payload) {
     if (!process.env.INTERNAL_AUTH_TOKEN) {
       throw new Error('INTERNAL_AUTH_TOKEN not configured');
     }
-    const port = process.env.PORT || 5001;
-    const backendHost = process.env.BACKEND_INTERNAL_URL || `http://localhost:${port}`;
+    const backendHost = resolveBackendHost();
 
     const res = await fetch(`${backendHost}/api/internal/broadcast`, {
       method: 'POST',
@@ -81,6 +81,22 @@ async function emitProgress(workflowId, payload) {
     console.error('❌ Runner socket broadcast error:', err.message);
   }
 }
+
+/**
+ * Resolve the internal backend base URL used by the worker for
+ * `/api/internal/broadcast` calls.
+ *
+ * Precedence:
+ *   1. Explicit `BACKEND_INTERNAL_URL` env var (e.g. `http://backend:5000`
+ *      in Docker, or a custom host:port in non-Docker deployments).
+ *   2. `http://localhost:<PORT>` fallback for local development, where the
+ *      worker and the API server run in the same process tree. The default
+ *      port is 5000, which matches the backend's documented default and
+ *      the value `PORT` takes in the Docker compose service definition.
+ *
+ * Implemented in `./backendHost.js` so the resolution logic is unit
+ * testable without booting the rest of the runner.
+ */
 
 /* -------------------------
    Worker loop
