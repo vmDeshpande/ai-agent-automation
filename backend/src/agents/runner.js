@@ -103,6 +103,116 @@ async function emitProgress(workflowId, payload) {
 ------------------------- */
 let isRunningLoop = false;
 
+/* -------------------------
+   Graceful shutdown (H-P2-1)
+------------------------- */
+let isShuttingDown = false;
+let currentTaskPromise = null;
+let currentTaskResolve = null;
+const SHUTDOWN_GRACE_MS = Number(process.env.WORKER_SHUTDOWN_GRACE_MS) || 30000;
+let signalHandlersRegistered = false;
+const registeredSignals = new Set();
+
+/* Hard cap on shutdown wait. If the currently running task does not
+ * finish within this window, the loop exits anyway. The task is left
+ * in `running` state for the existing claimNextTask stuck-task
+ * recovery (15-minute threshold) to clean up. Stale-task detection
+ * beyond that is tracked as H-P2-2 and is NOT implemented here. */
+const SHUTDOWN_FORCE_EXIT_MS = Number(process.env.WORKER_SHUTDOWN_FORCE_EXIT_MS) || 60000;
+
+/**
+ * Mark the worker as shutting down. Idempotent: subsequent calls
+ * are no-ops. Sets the flag the loop checks at the top of each
+ * iteration so a new task is never claimed after shutdown begins.
+ */
+function requestShutdown(reason = 'unspecified') {
+  if (isShuttingDown) return false;
+  isShuttingDown = true;
+  writeLog(
+    `Shutdown requested (${reason}). Will stop claiming new tasks and wait for the current task to finish.`,
+    'info',
+    { workerId: WORKER_ID }
+  );
+  return true;
+}
+
+/**
+ * Track the promise for the currently executing task so the signal
+ * handler can await it without coupling to internals.
+ */
+function setCurrentTask(promise) {
+  currentTaskPromise = promise;
+  if (promise && typeof currentTaskResolve === 'function') {
+    currentTaskResolve();
+    currentTaskResolve = null;
+  }
+}
+
+/**
+ * Wait for the currently running task to finish, up to the hard cap.
+ * Returns true if the task completed, false if the cap was hit.
+ */
+async function waitForCurrentTask() {
+  if (!currentTaskPromise) return true;
+  let timeoutId;
+  const cap = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve('timeout'), SHUTDOWN_FORCE_EXIT_MS);
+  });
+  try {
+    const result = await Promise.race([currentTaskPromise.catch(() => 'done'), cap]);
+    return result !== 'timeout';
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Register SIGTERM / SIGINT handlers. Idempotent: safe to call from
+ * tests and from the main entry point repeatedly. The runner module
+ * is loaded by the API server in some test/dev setups, so duplicate
+ * registration must not occur.
+ */
+function registerSignalHandlers() {
+  if (signalHandlersRegistered) return;
+  signalHandlersRegistered = true;
+
+  const handle = (signal) => {
+    requestShutdown(signal);
+    (async () => {
+      const finished = await waitForCurrentTask();
+      writeLog(
+        finished
+          ? `Shutdown after ${signal}: current task finished cleanly.`
+          : `Shutdown after ${signal}: hard exit, current task may be left in 'running' state.`,
+        finished ? 'info' : 'warn',
+        { workerId: WORKER_ID }
+      );
+      /* Give in-flight Mongo writes ~250ms to flush, then exit. */
+      setTimeout(() => process.exit(0), 250);
+    })();
+  };
+
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, () => handle(signal));
+    registeredSignals.add(signal);
+  }
+}
+
+/* For tests: reset the shutdown state so the module can be reloaded
+ * with a fresh loop. Not used in production. */
+function __resetShutdownStateForTests() {
+  isShuttingDown = false;
+  currentTaskPromise = null;
+  currentTaskResolve = null;
+  signalHandlersRegistered = false;
+  registeredSignals.clear();
+  isRunningLoop = false;
+}
+
+function isShutdownRequested() {
+  return isShuttingDown;
+}
+
 async function runWorkerLoop() {
   if (isRunningLoop) return;
   isRunningLoop = true;
@@ -111,501 +221,523 @@ async function runWorkerLoop() {
   writeLog('Runner started', 'info', { workerId: WORKER_ID });
 
   while (true) {
+    /* H-P2-1: stop claiming new tasks once shutdown begins. The
+     * currently executing task (if any) is tracked via
+     * `currentTaskPromise` so the signal handler can await it. */
+    if (isShuttingDown) {
+      writeLog('Shutdown flag observed, exiting worker loop.', 'info', { workerId: WORKER_ID });
+      break;
+    }
+
+    let iterationPromise;
     try {
-      const task = await claimNextTask();
+      iterationPromise = (async () => {
+        const task = await claimNextTask();
 
-      // -------------------------
-      // IDLE → poll interval sleep
-      // -------------------------
-      if (!task) {
-        const { pollIntervalMs } = await getGlobalWorkerSettings();
-        await sleep(pollIntervalMs);
-        continue;
-      }
-
-      // -------------------------
-      // Mark task running
-      // -------------------------
-      await Task.findByIdAndUpdate(task._id, {
-        status: 'running',
-        startedAt: new Date(),
-      });
-
-      if (task.workflowId) {
-        await emitProgress(task.workflowId, {
-          type: 'start',
-          message: 'Agent workflow execution initiated...',
-          taskId: task._id,
-        });
-      }
-
-      const traceId = crypto.randomUUID();
-
-      writeLog(`Task claimed: ${task._id}`, 'info', {
-        workerId: WORKER_ID,
-        taskId: task._id,
-        workflowId: task.workflowId,
-        traceId,
-      });
-
-      const workflow = task.workflowId ? await Workflow.findById(task.workflowId).lean() : null;
-
-      let agent = null;
-
-      if (workflow?.agentId) {
-        const Agent = require('../models/agent.model');
-        agent = await Agent.findById(workflow.agentId).lean();
-      }
-
-      const now = new Date();
-      const context = {
-        ...(task.input || {}),
-        input: task.input || {},
-        timestampIso: now.toISOString(),
-        timestamp: now.toLocaleString('en-US', {
-          dateStyle: 'long',
-          timeStyle: 'short',
-        }),
-        date: now.toLocaleDateString('en-US', { dateStyle: 'long' }),
-        time: now.toLocaleTimeString('en-US', { timeStyle: 'short' }),
-        workflow,
-        taskId: task._id,
-        userId: task.userId,
-        traceId,
-        results: [],
-        steps: {},
-      };
-
-      if (Array.isArray(task.stepResults)) {
-        task.stepResults.forEach((res) => {
-          if (res && res.stepId) {
-            context.steps[res.stepId] = res;
-            context.results.push(res);
-          }
-        });
-        if (task.stepResults.length > 0) {
-          const lastRes = task.stepResults[task.stepResults.length - 1];
-          context.last = { input: lastRes.input, output: lastRes.output };
+        // -------------------------
+        // IDLE → poll interval sleep
+        // -------------------------
+        if (!task) {
+          const { pollIntervalMs } = await getGlobalWorkerSettings();
+          await sleep(pollIntervalMs);
+          return; /* exits the iteration IIFE, not the outer loop */
         }
-      }
 
-      // -------------------------
-      // Resolve steps
-      // -------------------------
-      const steps =
-        Array.isArray(task.steps) && task.steps.length > 0
-          ? task.steps
-          : Array.isArray(task.metadata?.steps) && task.metadata.steps.length > 0
-            ? task.metadata.steps
-            : Array.isArray(workflow?.metadata?.steps)
-              ? workflow.metadata.steps
-              : [];
+        // -------------------------
+        // Mark task running
+        // -------------------------
+        await Task.findByIdAndUpdate(task._id, {
+          status: 'running',
+          startedAt: new Date(),
+        });
 
-      const edges =
-        Array.isArray(task.metadata?.edges) && task.metadata.edges.length > 0
-          ? task.metadata.edges
-          : Array.isArray(workflow?.metadata?.edges)
-            ? workflow.metadata.edges
-            : [];
-      let success = true;
+        if (task.workflowId) {
+          await emitProgress(task.workflowId, {
+            type: 'start',
+            message: 'Agent workflow execution initiated...',
+            taskId: task._id,
+          });
+        }
 
-      if (steps.length > 0) {
-        writeLog(`Executing ${steps.length} steps…`, 'info', {
+        const traceId = crypto.randomUUID();
+
+        writeLog(`Task claimed: ${task._id}`, 'info', {
           workerId: WORKER_ID,
           taskId: task._id,
           workflowId: task.workflowId,
           traceId,
         });
 
-        function getStepId(step) {
-          return step?.stepId || step?.id || step?.name;
+        const workflow = task.workflowId ? await Workflow.findById(task.workflowId).lean() : null;
+
+        let agent = null;
+
+        if (workflow?.agentId) {
+          const Agent = require('../models/agent.model');
+          agent = await Agent.findById(workflow.agentId).lean();
         }
 
-        const stepsMap = {};
-        steps.forEach((s) => {
-          if (s) {
-            if (s.type) s.type = String(s.type).toLowerCase();
-            stepsMap[getStepId(s)] = s;
+        const now = new Date();
+        const context = {
+          ...(task.input || {}),
+          input: task.input || {},
+          timestampIso: now.toISOString(),
+          timestamp: now.toLocaleString('en-US', {
+            dateStyle: 'long',
+            timeStyle: 'short',
+          }),
+          date: now.toLocaleDateString('en-US', { dateStyle: 'long' }),
+          time: now.toLocaleTimeString('en-US', { timeStyle: 'short' }),
+          workflow,
+          taskId: task._id,
+          userId: task.userId,
+          traceId,
+          results: [],
+          steps: {},
+        };
+
+        if (Array.isArray(task.stepResults)) {
+          task.stepResults.forEach((res) => {
+            if (res && res.stepId) {
+              context.steps[res.stepId] = res;
+              context.results.push(res);
+            }
+          });
+          if (task.stepResults.length > 0) {
+            const lastRes = task.stepResults[task.stepResults.length - 1];
+            context.last = { input: lastRes.input, output: lastRes.output };
           }
-        });
+        }
 
-        // -------------------------------------------------------------
-        // 🔥 DETERMINISTIC REPLAY RESUMABLE EXECUTION
-        // -------------------------------------------------------------
-        const targetSet = new Set(edges.map((e) => e.target));
-        const entryStep = steps.find((s) => !targetSet.has(getStepId(s)));
+        // -------------------------
+        // Resolve steps
+        // -------------------------
+        const steps =
+          Array.isArray(task.steps) && task.steps.length > 0
+            ? task.steps
+            : Array.isArray(task.metadata?.steps) && task.metadata.steps.length > 0
+              ? task.metadata.steps
+              : Array.isArray(workflow?.metadata?.steps)
+                ? workflow.metadata.steps
+                : [];
 
-        let currentStep = entryStep;
+        const edges =
+          Array.isArray(task.metadata?.edges) && task.metadata.edges.length > 0
+            ? task.metadata.edges
+            : Array.isArray(workflow?.metadata?.edges)
+              ? workflow.metadata.edges
+              : [];
+        let success = true;
 
-        if (task.executionMode === 'partial' && typeof task.currentStep === 'number') {
-          currentStep = steps[task.currentStep] || entryStep;
-
-          writeLog(`[Replay] Resuming task from step index ${task.currentStep}`, 'info', {
+        if (steps.length > 0) {
+          writeLog(`Executing ${steps.length} steps…`, 'info', {
             workerId: WORKER_ID,
             taskId: task._id,
             workflowId: task.workflowId,
             traceId,
           });
-        }
 
-        function getNextEdge(stepLocal, resultLocal) {
-          if (stepLocal.type === 'condition') {
-            return edges.find(
-              (e) => e.source === getStepId(stepLocal) && e.condition === resultLocal.branch
-            );
+          function getStepId(step) {
+            return step?.stepId || step?.id || step?.name;
           }
-          if (stepLocal.type === 'switch') {
-            const normalize = (v) =>
-              String(v || '')
-                .toLowerCase()
-                .trim();
-            const value = normalize(resultLocal.caseValue);
-            const nextEdge = edges.find((e) => {
-              if (e.source !== getStepId(stepLocal)) return false;
-              return value.includes(normalize(e.caseValue));
-            });
-            return nextEdge || edges.find((e) => e.source === getStepId(stepLocal) && !e.caseValue);
-          }
-          return edges.find((e) => e.source === getStepId(stepLocal));
-        }
 
-        async function processBranch(startStep, branchContext, isSubBranch = false) {
-          let stepNode = startStep;
-          let stepCount = 0;
-          const branchSuccess = true;
-
-          while (stepNode && stepCount < 50) {
-            stepCount++;
-            const sId = getStepId(stepNode);
-            if ((stepNode.type === 'join' || stepNode.type === 'Join') && isSubBranch) {
-              return { success: true, branchContext, joinNode: stepNode };
+          const stepsMap = {};
+          steps.forEach((s) => {
+            if (s) {
+              if (s.type) s.type = String(s.type).toLowerCase();
+              stepsMap[getStepId(s)] = s;
             }
-            if (stepNode.type === 'parallel' || stepNode.type === 'Parallel') {
-              const outEdges = edges.filter((e) => e.source === sId);
-              if (outEdges.length < 2) {
-                const errMsg = `Runtime Error: Parallel node requires at least 2 branches.`;
-                console.error(`❌ ${errMsg}`);
+          });
 
-                const errorResult = {
-                  stepId: sId,
-                  type: 'parallel',
-                  input: 'Branch Validation',
-                  output: errMsg,
-                  success: false,
-                  timestamp: new Date(),
-                };
+          // -------------------------------------------------------------
+          // 🔥 DETERMINISTIC REPLAY RESUMABLE EXECUTION
+          // -------------------------------------------------------------
+          const targetSet = new Set(edges.map((e) => e.target));
+          const entryStep = steps.find((s) => !targetSet.has(getStepId(s)));
 
-                await Task.findByIdAndUpdate(task._id, { $push: { stepResults: errorResult } });
-                branchContext.results.push(errorResult);
+          let currentStep = entryStep;
 
-                return { success: false, branchContext };
-              }
+          if (task.executionMode === 'partial' && typeof task.currentStep === 'number') {
+            currentStep = steps[task.currentStep] || entryStep;
 
-              const strategy = stepNode.failureStrategy || 'fail-fast';
+            writeLog(`[Replay] Resuming task from step index ${task.currentStep}`, 'info', {
+              workerId: WORKER_ID,
+              taskId: task._id,
+              workflowId: task.workflowId,
+              traceId,
+            });
+          }
 
-              const isCached =
-                Array.isArray(task.stepResults) &&
-                task.stepResults.some((r) => r && r.stepId === sId && r.type === 'parallel');
-
-              const parallelStartResult = {
-                stepId: sId,
-                type: 'parallel',
-                input: 'Parallel Execution Start',
-                output: `${outEdges.length} branches spawned concurrently...`,
-                success: true,
-                timestamp: new Date(),
-              };
-
-              if (!isCached) {
-                await Task.findByIdAndUpdate(task._id, {
-                  $push: { stepResults: parallelStartResult },
-                });
-              }
-              branchContext.results.push(parallelStartResult);
-
-              const branchPromises = outEdges.map((edge) => {
-                const targetStep = stepsMap[edge.target];
-                const isolatedContext = {
-                  ...branchContext,
-                  results: [...branchContext.results],
-                  steps: { ...(branchContext.steps || {}) },
-                  last: branchContext.last ? { ...branchContext.last } : null,
-                };
-                return processBranch(targetStep, isolatedContext, true);
+          function getNextEdge(stepLocal, resultLocal) {
+            if (stepLocal.type === 'condition') {
+              return edges.find(
+                (e) => e.source === getStepId(stepLocal) && e.condition === resultLocal.branch
+              );
+            }
+            if (stepLocal.type === 'switch') {
+              const normalize = (v) =>
+                String(v || '')
+                  .toLowerCase()
+                  .trim();
+              const value = normalize(resultLocal.caseValue);
+              const nextEdge = edges.find((e) => {
+                if (e.source !== getStepId(stepLocal)) return false;
+                return value.includes(normalize(e.caseValue));
               });
+              return (
+                nextEdge || edges.find((e) => e.source === getStepId(stepLocal) && !e.caseValue)
+              );
+            }
+            return edges.find((e) => e.source === getStepId(stepLocal));
+          }
 
-              let branchResults = [];
-              let parallelSuccess = true;
+          async function processBranch(startStep, branchContext, isSubBranch = false) {
+            let stepNode = startStep;
+            let stepCount = 0;
+            const branchSuccess = true;
 
-              if (strategy === 'fail-fast') {
-                branchResults = await Promise.all(branchPromises);
-                if (branchResults.some((r) => !r.success)) parallelSuccess = false;
-              } else {
-                const settled = await Promise.allSettled(branchPromises);
-                branchResults = settled.map((res) => {
-                  if (res.status === 'fulfilled') {
-                    if (!res.value.success) parallelSuccess = false;
-                    return res.value;
-                  } else {
-                    parallelSuccess = false;
-                    return { success: false, branchContext: { last: { output: res.reason } } };
-                  }
-                });
+            while (stepNode && stepCount < 50) {
+              stepCount++;
+              const sId = getStepId(stepNode);
+              if ((stepNode.type === 'join' || stepNode.type === 'Join') && isSubBranch) {
+                return { success: true, branchContext, joinNode: stepNode };
               }
+              if (stepNode.type === 'parallel' || stepNode.type === 'Parallel') {
+                const outEdges = edges.filter((e) => e.source === sId);
+                if (outEdges.length < 2) {
+                  const errMsg = `Runtime Error: Parallel node requires at least 2 branches.`;
+                  console.error(`❌ ${errMsg}`);
 
-              const aggregatedOutputs = {};
-              const flatOutputs = [];
-              branchResults.forEach((r, index) => {
-                const targetId = outEdges[index].target;
-                const outputVal = r.branchContext?.last?.output || null;
-                aggregatedOutputs[targetId] = outputVal;
-                flatOutputs.push(outputVal);
-              });
-
-              branchContext.parallel = { results: aggregatedOutputs, flat: flatOutputs };
-              branchContext.last = { output: aggregatedOutputs };
-
-              if (!parallelSuccess && strategy === 'fail-fast')
-                return { success: false, branchContext };
-
-              const uniqueJoinNodes = [
-                ...new Set(
-                  branchResults.map((r) => (r.joinNode ? getStepId(r.joinNode) : 'MISSING_JOIN'))
-                ),
-              ];
-
-              if (uniqueJoinNodes.includes('MISSING_JOIN') || uniqueJoinNodes.length > 1) {
-                const errMsg = `Join Synchronization Failed: All branches must converge to exactly one Join node. Detected: [${uniqueJoinNodes.join(', ')}]`;
-                console.error(`❌ ${errMsg}`);
-
-                const errorResult = {
-                  stepId: sId,
-                  type: 'join',
-                  input: 'Checking branch convergence',
-                  output: errMsg,
-                  success: false,
-                  timestamp: new Date(),
-                };
-
-                await Task.findByIdAndUpdate(task._id, { $push: { stepResults: errorResult } });
-                branchContext.results.push(errorResult);
-
-                return { success: false, branchContext };
-              }
-
-              // If one of the branches was aborted because another worker got the join lock first,
-              // we must exit immediately to avoid duplicate join attempts.
-              if (branchResults.some((r) => r.joinSynchronized)) {
-                return { success: true, branchContext, joinSynchronized: true };
-              }
-
-              const joinNode = branchResults.find((r) => r.joinNode)?.joinNode || null;
-
-              if (joinNode) {
-                const joinNodeId = getStepId(joinNode);
-                const lockKey = `lock:join:${task._id}:${joinNodeId}`;
-                const hasLock = await LockManager.acquireLock(lockKey, 10000, WORKER_ID);
-
-                if (!hasLock) {
-                  // Another worker has already claimed or completed this join node processing
-                  writeLog(
-                    `[Runner] Another worker is processing join node ${joinNodeId}. Aborting branch execution.`,
-                    'info',
-                    {
-                      workerId: WORKER_ID,
-                      taskId: task._id,
-                      traceId: branchContext.traceId,
-                    }
-                  );
-                  return { success: true, branchContext, joinSynchronized: true };
-                }
-
-                try {
-                  const joinResult = {
-                    stepId: joinNodeId,
-                    type: 'join',
-                    input: aggregatedOutputs,
-                    output: aggregatedOutputs,
-                    success: true,
+                  const errorResult = {
+                    stepId: sId,
+                    type: 'parallel',
+                    input: 'Branch Validation',
+                    output: errMsg,
+                    success: false,
                     timestamp: new Date(),
                   };
 
-                  // Re-fetch the latest persisted task state from the DB *inside*
-                  // the lock to avoid a stale-read false negative. The in-memory
-                  // `task.stepResults` is never updated after Task.findByIdAndUpdate
-                  // calls made by other workers, so checking it directly would allow
-                  // a second worker (arriving after lock release) to see the old
-                  // state and duplicate the join execution.
-                  const freshTask = await Task.findById(task._id).select('stepResults').lean();
+                  await Task.findByIdAndUpdate(task._id, { $push: { stepResults: errorResult } });
+                  branchContext.results.push(errorResult);
 
-                  const isJoinAlreadyPersisted =
-                    Array.isArray(freshTask?.stepResults) &&
-                    freshTask.stepResults.some(
-                      (r) => r && r.stepId === joinNodeId && r.type === 'join'
-                    );
-
-                  if (!isJoinAlreadyPersisted) {
-                    await Task.findByIdAndUpdate(task._id, { $push: { stepResults: joinResult } });
-                    branchContext.results.push(joinResult);
-                  }
-
-                  const nextEdge = getNextEdge(joinNode, joinResult);
-                  if (!nextEdge) {
-                    await LockManager.releaseLock(lockKey, WORKER_ID);
-                    break;
-                  }
-                  stepNode = stepsMap[nextEdge.target];
-                  await LockManager.releaseLock(lockKey, WORKER_ID);
-                  continue;
-                } catch (err) {
-                  await LockManager.releaseLock(lockKey, WORKER_ID);
-                  throw err;
+                  return { success: false, branchContext };
                 }
-              } else {
-                break;
-              }
-            }
-            let result;
-            const cachedResult = Array.isArray(task.stepResults)
-              ? task.stepResults.find(
-                  (r) =>
-                    r &&
-                    r.stepId === getStepId(stepNode) &&
-                    r.type !== 'parallel' &&
-                    r.type !== 'join' &&
-                    r.success === true
-                )
-              : null;
 
-            if (cachedResult) {
-              writeLog(
-                `[Replay] Fast-forwarding previously executed step: ${stepNode.name}`,
-                'info',
-                {
+                const strategy = stepNode.failureStrategy || 'fail-fast';
+
+                const isCached =
+                  Array.isArray(task.stepResults) &&
+                  task.stepResults.some((r) => r && r.stepId === sId && r.type === 'parallel');
+
+                const parallelStartResult = {
+                  stepId: sId,
+                  type: 'parallel',
+                  input: 'Parallel Execution Start',
+                  output: `${outEdges.length} branches spawned concurrently...`,
+                  success: true,
+                  timestamp: new Date(),
+                };
+
+                if (!isCached) {
+                  await Task.findByIdAndUpdate(task._id, {
+                    $push: { stepResults: parallelStartResult },
+                  });
+                }
+                branchContext.results.push(parallelStartResult);
+
+                const branchPromises = outEdges.map((edge) => {
+                  const targetStep = stepsMap[edge.target];
+                  const isolatedContext = {
+                    ...branchContext,
+                    results: [...branchContext.results],
+                    steps: { ...(branchContext.steps || {}) },
+                    last: branchContext.last ? { ...branchContext.last } : null,
+                  };
+                  return processBranch(targetStep, isolatedContext, true);
+                });
+
+                let branchResults = [];
+                let parallelSuccess = true;
+
+                if (strategy === 'fail-fast') {
+                  branchResults = await Promise.all(branchPromises);
+                  if (branchResults.some((r) => !r.success)) parallelSuccess = false;
+                } else {
+                  const settled = await Promise.allSettled(branchPromises);
+                  branchResults = settled.map((res) => {
+                    if (res.status === 'fulfilled') {
+                      if (!res.value.success) parallelSuccess = false;
+                      return res.value;
+                    } else {
+                      parallelSuccess = false;
+                      return { success: false, branchContext: { last: { output: res.reason } } };
+                    }
+                  });
+                }
+
+                const aggregatedOutputs = {};
+                const flatOutputs = [];
+                branchResults.forEach((r, index) => {
+                  const targetId = outEdges[index].target;
+                  const outputVal = r.branchContext?.last?.output || null;
+                  aggregatedOutputs[targetId] = outputVal;
+                  flatOutputs.push(outputVal);
+                });
+
+                branchContext.parallel = { results: aggregatedOutputs, flat: flatOutputs };
+                branchContext.last = { output: aggregatedOutputs };
+
+                if (!parallelSuccess && strategy === 'fail-fast')
+                  return { success: false, branchContext };
+
+                const uniqueJoinNodes = [
+                  ...new Set(
+                    branchResults.map((r) => (r.joinNode ? getStepId(r.joinNode) : 'MISSING_JOIN'))
+                  ),
+                ];
+
+                if (uniqueJoinNodes.includes('MISSING_JOIN') || uniqueJoinNodes.length > 1) {
+                  const errMsg = `Join Synchronization Failed: All branches must converge to exactly one Join node. Detected: [${uniqueJoinNodes.join(', ')}]`;
+                  console.error(`❌ ${errMsg}`);
+
+                  const errorResult = {
+                    stepId: sId,
+                    type: 'join',
+                    input: 'Checking branch convergence',
+                    output: errMsg,
+                    success: false,
+                    timestamp: new Date(),
+                  };
+
+                  await Task.findByIdAndUpdate(task._id, { $push: { stepResults: errorResult } });
+                  branchContext.results.push(errorResult);
+
+                  return { success: false, branchContext };
+                }
+
+                // If one of the branches was aborted because another worker got the join lock first,
+                // we must exit immediately to avoid duplicate join attempts.
+                if (branchResults.some((r) => r.joinSynchronized)) {
+                  return { success: true, branchContext, joinSynchronized: true };
+                }
+
+                const joinNode = branchResults.find((r) => r.joinNode)?.joinNode || null;
+
+                if (joinNode) {
+                  const joinNodeId = getStepId(joinNode);
+                  const lockKey = `lock:join:${task._id}:${joinNodeId}`;
+                  const hasLock = await LockManager.acquireLock(lockKey, 10000, WORKER_ID);
+
+                  if (!hasLock) {
+                    // Another worker has already claimed or completed this join node processing
+                    writeLog(
+                      `[Runner] Another worker is processing join node ${joinNodeId}. Aborting branch execution.`,
+                      'info',
+                      {
+                        workerId: WORKER_ID,
+                        taskId: task._id,
+                        traceId: branchContext.traceId,
+                      }
+                    );
+                    return { success: true, branchContext, joinSynchronized: true };
+                  }
+
+                  try {
+                    const joinResult = {
+                      stepId: joinNodeId,
+                      type: 'join',
+                      input: aggregatedOutputs,
+                      output: aggregatedOutputs,
+                      success: true,
+                      timestamp: new Date(),
+                    };
+
+                    // Re-fetch the latest persisted task state from the DB *inside*
+                    // the lock to avoid a stale-read false negative. The in-memory
+                    // `task.stepResults` is never updated after Task.findByIdAndUpdate
+                    // calls made by other workers, so checking it directly would allow
+                    // a second worker (arriving after lock release) to see the old
+                    // state and duplicate the join execution.
+                    const freshTask = await Task.findById(task._id).select('stepResults').lean();
+
+                    const isJoinAlreadyPersisted =
+                      Array.isArray(freshTask?.stepResults) &&
+                      freshTask.stepResults.some(
+                        (r) => r && r.stepId === joinNodeId && r.type === 'join'
+                      );
+
+                    if (!isJoinAlreadyPersisted) {
+                      await Task.findByIdAndUpdate(task._id, {
+                        $push: { stepResults: joinResult },
+                      });
+                      branchContext.results.push(joinResult);
+                    }
+
+                    const nextEdge = getNextEdge(joinNode, joinResult);
+                    if (!nextEdge) {
+                      await LockManager.releaseLock(lockKey, WORKER_ID);
+                      break;
+                    }
+                    stepNode = stepsMap[nextEdge.target];
+                    await LockManager.releaseLock(lockKey, WORKER_ID);
+                    continue;
+                  } catch (err) {
+                    await LockManager.releaseLock(lockKey, WORKER_ID);
+                    throw err;
+                  }
+                } else {
+                  break;
+                }
+              }
+              let result;
+              const cachedResult = Array.isArray(task.stepResults)
+                ? task.stepResults.find(
+                    (r) =>
+                      r &&
+                      r.stepId === getStepId(stepNode) &&
+                      r.type !== 'parallel' &&
+                      r.type !== 'join' &&
+                      r.success === true
+                  )
+                : null;
+
+              if (cachedResult) {
+                writeLog(
+                  `[Replay] Fast-forwarding previously executed step: ${stepNode.name}`,
+                  'info',
+                  {
+                    workerId: WORKER_ID,
+                    taskId: task._id,
+                    workflowId: task.workflowId,
+                    traceId: branchContext.traceId,
+                  }
+                );
+                result = cachedResult;
+                // The specific stepResult will already contain the updated output/feedback
+                // from when the user approved or rejected it via the API.
+              } else {
+                writeLog(`Executing Step: ${stepNode.name} (${stepNode.type})`, 'info', {
                   workerId: WORKER_ID,
                   taskId: task._id,
                   workflowId: task.workflowId,
                   traceId: branchContext.traceId,
-                }
-              );
-              result = cachedResult;
-              // The specific stepResult will already contain the updated output/feedback
-              // from when the user approved or rejected it via the API.
-            } else {
-              writeLog(`Executing Step: ${stepNode.name} (${stepNode.type})`, 'info', {
-                workerId: WORKER_ID,
-                taskId: task._id,
-                workflowId: task.workflowId,
-                traceId: branchContext.traceId,
-              });
-              await emitProgress(task.workflowId, {
-                type: 'step_start',
-                stepName: stepNode.name,
-                message: `Executing step: ${stepNode.name}...`,
-              });
-              result = await executeStep(stepNode, branchContext, agent);
+                });
+                await emitProgress(task.workflowId, {
+                  type: 'step_start',
+                  stepName: stepNode.name,
+                  message: `Executing step: ${stepNode.name}...`,
+                });
+                result = await executeStep(stepNode, branchContext, agent);
 
-              if (!result) {
-                throw new Error(
-                  `executeStep returned ${result} for step ${stepNode.name} (${stepNode.type})`
-                );
+                if (!result) {
+                  throw new Error(
+                    `executeStep returned ${result} for step ${stepNode.name} (${stepNode.type})`
+                  );
+                }
+                result.name = stepNode.name;
+                result.type = stepNode.type;
+                await Task.findByIdAndUpdate(task._id, { $push: { stepResults: result } });
               }
-              result.name = stepNode.name;
-              result.type = stepNode.type;
-              await Task.findByIdAndUpdate(task._id, { $push: { stepResults: result } });
-            }
 
-            branchContext.results.push(result);
-            branchContext.steps = branchContext.steps || {};
-            const sId2 = getStepId(stepNode);
-            branchContext.steps[sId2] = result;
-            if (stepNode.alias && stepNode.alias !== sId2) {
-              branchContext.steps[stepNode.alias] = result;
-            }
-            branchContext.last = { input: result.input, output: result.output };
+              branchContext.results.push(result);
+              branchContext.steps = branchContext.steps || {};
+              const sId2 = getStepId(stepNode);
+              branchContext.steps[sId2] = result;
+              if (stepNode.alias && stepNode.alias !== sId2) {
+                branchContext.steps[stepNode.alias] = result;
+              }
+              branchContext.last = { input: result.input, output: result.output };
 
-            if (!result.success) return { success: false, branchContext };
+              if (!result.success) return { success: false, branchContext };
 
-            const nextEdge = getNextEdge(stepNode, result);
-            const nextStepId = nextEdge ? nextEdge.target : null;
+              const nextEdge = getNextEdge(stepNode, result);
+              const nextStepId = nextEdge ? nextEdge.target : null;
 
-            // ── HITL: Pause execution if this step requires human approval ──
-            if (result.requiresApproval && !cachedResult) {
-              await Task.findByIdAndUpdate(task._id, {
-                $set: {
-                  status: 'pending_approval',
-                  approval: {
-                    stepId: getStepId(stepNode),
-                    requestedAt: new Date(),
+              // ── HITL: Pause execution if this step requires human approval ──
+              if (result.requiresApproval && !cachedResult) {
+                await Task.findByIdAndUpdate(task._id, {
+                  $set: {
+                    status: 'pending_approval',
+                    approval: {
+                      stepId: getStepId(stepNode),
+                      requestedAt: new Date(),
+                    },
                   },
-                },
-              });
-              writeLog(
-                `Task ${task._id} paused for approval at step ${getStepId(stepNode)}`,
-                'info',
-                {
-                  workerId: WORKER_ID,
-                  taskId: task._id,
-                  stepId: getStepId(stepNode),
-                  traceId: branchContext.traceId,
-                }
-              );
-              return { success: false, branchContext, paused: true };
+                });
+                writeLog(
+                  `Task ${task._id} paused for approval at step ${getStepId(stepNode)}`,
+                  'info',
+                  {
+                    workerId: WORKER_ID,
+                    taskId: task._id,
+                    stepId: getStepId(stepNode),
+                    traceId: branchContext.traceId,
+                  }
+                );
+                return { success: false, branchContext, paused: true };
+              }
+
+              if (!nextEdge) break;
+              stepNode = stepsMap[nextEdge.target];
             }
 
-            if (!nextEdge) break;
-            stepNode = stepsMap[nextEdge.target];
+            return { success: branchSuccess, branchContext };
           }
+          const finalExecution = await processBranch(currentStep, context, false);
+          if (finalExecution.paused)
+            return; /* skip remainder, outer loop will check shutdown flag and poll next */
+          success = finalExecution.success;
+        } else {
+          const llmResult = await executeStep(
+            {
+              type: 'llm',
+              prompt: task.input?.text || 'Give a short summary.',
+            },
+            context,
+            agent
+          );
 
-          return { success: branchSuccess, branchContext };
+          await Task.findByIdAndUpdate(task._id, {
+            $push: { stepResults: llmResult },
+          });
+
+          success = llmResult.success;
         }
-        const finalExecution = await processBranch(currentStep, context, false);
-        if (finalExecution.paused) continue; // Move on to next task if paused for HITL
-        success = finalExecution.success;
-      } else {
-        const llmResult = await executeStep(
-          {
-            type: 'llm',
-            prompt: task.input?.text || 'Give a short summary.',
-          },
-          context,
-          agent
-        );
 
-        await Task.findByIdAndUpdate(task._id, {
-          $push: { stepResults: llmResult },
+        await completeTask(task._id, { success });
+
+        if (task.workflowId) {
+          await emitProgress(task.workflowId, {
+            type: 'complete',
+            success: success,
+            message: `Workflow completed with status: ${success ? 'Success' : 'Failed'}`,
+            taskId: task._id,
+          });
+        }
+
+        const durationMs = task.startedAt ? Date.now() - new Date(task.startedAt).getTime() : 0;
+
+        const stepTypes = context.results.map((result) => result.type || 'unknown');
+        telemetryService.recordTaskMetrics({ stepTypes, durationMs }).catch((err) => {
+          console.error('Telemetry failed:', err.message || err);
         });
 
-        success = llmResult.success;
-      }
-
-      await completeTask(task._id, { success });
-
-      if (task.workflowId) {
-        await emitProgress(task.workflowId, {
-          type: 'complete',
-          success: success,
-          message: `Workflow completed with status: ${success ? 'Success' : 'Failed'}`,
+        writeLog(`Task ${task._id} completed. Success: ${success}`, 'info', {
+          workerId: WORKER_ID,
           taskId: task._id,
+          workflowId: task.workflowId,
+          traceId: context.traceId,
         });
-      }
-
-      const durationMs = task.startedAt ? Date.now() - new Date(task.startedAt).getTime() : 0;
-
-      const stepTypes = context.results.map((result) => result.type || 'unknown');
-      telemetryService.recordTaskMetrics({ stepTypes, durationMs }).catch((err) => {
-        console.error('Telemetry failed:', err.message || err);
-      });
-
-      writeLog(`Task ${task._id} completed. Success: ${success}`, 'info', {
-        workerId: WORKER_ID,
-        taskId: task._id,
-        workflowId: task.workflowId,
-        traceId: context.traceId,
-      });
+      })();
+      setCurrentTask(iterationPromise);
+      await iterationPromise;
     } catch (error) {
       console.error('❌ Worker loop error:', error);
       await sleep(SAFE_FALLBACK_SETTINGS.pollIntervalMs);
+    } finally {
+      /* Clear the tracked promise so the signal handler does not wait
+       * on a finished iteration. */
+      setCurrentTask(null);
     }
   }
 }
@@ -615,10 +747,21 @@ async function start() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('📡 MongoDB connected for Agent Runner');
   }
+  /* H-P2-1: install SIGTERM/SIGINT handlers before entering the
+   * loop so a signal received during startup is still handled. */
+  registerSignalHandlers();
   runWorkerLoop();
 }
 
-module.exports = { start, runWorkerLoop };
+module.exports = {
+  start,
+  runWorkerLoop,
+  registerSignalHandlers,
+  requestShutdown,
+  waitForCurrentTask,
+  isShutdownRequested,
+  __resetShutdownStateForTests,
+};
 
 if (require.main === module) {
   start();

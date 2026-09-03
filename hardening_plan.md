@@ -98,7 +98,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 
 | ID | Finding | Status | Affected Area | Description | Recommended Next Phase |
 |---|---|---|---|---|---|
-| H-P2-1 | No Graceful Worker Shutdown | NOT STARTED | Worker runtime | No SIGTERM/SIGINT handler | Add signal handlers |
+| H-P2-1 | No Graceful Worker Shutdown | COMPLETED | Worker runtime | Graceful SIGTERM/SIGINT handling. Shutdown flag stops new claims; current task finishes with a hard cap. Idempotent handlers. | Verified: 11 new tests passing, 94/94 full suite |
 | H-P2-2 | Stale Task Recovery Missing | NOT STARTED | Worker / Task system | No recovery for stuck tasks | Add stale-task detection |
 | H-P2-3 | No Health Check Endpoint Validation | NOT STARTED | Backend | /health does not check dependencies | Add /ready endpoint |
 | H-P2-4 | Dashboard Queries Hit MongoDB Directly | NOT STARTED | Backend API | 12 parallel countDocuments per request | Add caching layer |
@@ -484,6 +484,28 @@ Hardening is complete when:
 - **Impact:** Stuck tasks after container restart or deploy.
 - **Recommended fix:** Add signal handlers. Mark current task as `failed` or re-queue on shutdown.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/agents/runner.js`: added a shutdown state machine alongside `runWorkerLoop`. Module-level `isShuttingDown` flag (idempotent: `requestShutdown()` returns `true` on first call, `false` thereafter). The flag is checked at the top of every loop iteration so a new task is never claimed once shutdown begins. The current iteration is wrapped in an IIFE whose promise is tracked via `setCurrentTask()`. `waitForCurrentTask()` races that promise against a hard cap (`WORKER_SHUTDOWN_FORCE_EXIT_MS`, default 60 s) and resolves with `true` (clean) or `false` (cap hit). `registerSignalHandlers()` installs `SIGTERM` and `SIGINT` listeners; idempotent via a `signalHandlersRegistered` guard so the API server's accidental co-import of the runner does not cause duplicate handlers. `start()` calls `registerSignalHandlers()` before `runWorkerLoop()` so a signal received during startup is still handled. After the current task finishes (or the cap elapses), the process exits after a 250 ms flush delay.
+  - **Interaction with H-P2-2 (out of scope here):** If the current task cannot finish before the hard cap, it is left in `status: 'running'`. The existing `claimNextTask()` stuck-task recovery (15-minute threshold on `startedAt`) will eventually reset it to `pending` for re-claim. Stale-task detection with a shorter threshold, retry semantics, and explicit re-queue on shutdown are tracked separately as **H-P2-2 and are NOT implemented in this change**.
+  - **No re-queue on shutdown was added** because the existing `Task` model and `queueService` do not expose a safe "release without completing" operation; introducing one here would expand the scope into H-P2-2 and risk inconsistent state.
+- **Tests:** `backend/src/tests/runner.shutdown.handler.test.js` (11 tests):
+  1. `isShutdownRequested` defaults to `false`.
+  2. `requestShutdown` flips the flag and returns `true` on first call.
+  3. `requestShutdown` is idempotent (second/third calls return `false`).
+  4. `waitForCurrentTask` resolves immediately when no task is in flight.
+  5. `waitForCurrentTask` awaits an in-flight task and resolves when it finishes.
+  6. `waitForCurrentTask` applies a hard cap when a task never finishes.
+  7. `runWorkerLoop` exits cleanly when shutdown is requested before any claim (no `claimNextTask` call).
+  8. `runWorkerLoop` does not claim a new task after shutdown begins.
+  9. `registerSignalHandlers` is idempotent (multiple calls do not double-register).
+  10. `registerSignalHandlers` installs listeners that call `requestShutdown` when emitted.
+  11. The new shutdown helpers are exported.
+- **Verification:** 11/11 new tests pass. Full backend suite: 19 suites, 94/94 pass. Lint clean for all changed files. `git diff --check` clean (only the standard LF/CRLF informational warnings on the pre-existing mixed-EOL repo).
+- **Operational notes:**
+  - `WORKER_SHUTDOWN_GRACE_MS` (currently unused but reserved) and `WORKER_SHUTDOWN_FORCE_EXIT_MS` (default 60 000) are configurable via env.
+  - The Docker `worker` service in `infra/docker-compose.yml` already has `restart: unless-stopped`, so a worker that exits cleanly after SIGTERM will be restarted by the orchestrator.
+  - The worker Dockerfile does not need a `STOPSIGNAL` directive — Docker's default `SIGTERM` is the correct signal and is now handled.
 
 ### H-P2-2: Stale Task Recovery Missing
 - **Category:** Reliability
