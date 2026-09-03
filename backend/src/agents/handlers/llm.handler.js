@@ -8,19 +8,20 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   let finalPrompt = prompt;
   let memoryMetrics = null;
 
-  let systemBlock = "";
+  let systemBlock = '';
   if (agent) {
     systemBlock = `You are ${agent.name || 'an AI agent'}.`;
     if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
     if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
     if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
-    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+    if (agent.systemInstructions)
+      systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
   }
 
   if (config.useMemory && agent) {
     const { retrieveMemory, storeMemory } = require('../../services/memoryService');
 
-    const memories = await retrieveMemory(agent, prompt, config.memoryTopK || 5);
+    const memories = await retrieveMemory(agent, prompt, context?.userId, config.memoryTopK || 5);
 
     memoryMetrics = {
       useMemory: true,

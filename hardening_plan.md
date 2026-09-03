@@ -86,7 +86,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-4 | Document Upload Lacks Size/MIME Enforcement | NOT STARTED | Document ingestion | No file size limit; extension-based type check only | Add limits and MIME verification |
 | H-P1-5 | Webhook Public Endpoint Lacks Payload Size Limit | COMPLETED | Public webhook receiver | Added 1 MB route-level JSON/urlencoded body limit on /webhook/* with 413 response on overflow. Global body parser capped at 2 MB; webhook route excluded from global parser. | Verified: 6 security tests passing |
 | H-P1-6 | No Rate Limiting on All API Routes | COMPLETED | Backend API | Single API-wide baseline rate limiter applied at /api mount. Per-route duplicates removed to prevent double application. | Verified: 8 security tests passing |
-| H-P1-7 | Agent Memory Search Potentially Cross-User | NOT STARTED | Memory retrieval | Ownership checked at agent level; add defense-in-depth | Add explicit ownership check |
+| H-P1-7 | Agent Memory Search Potentially Cross-User | COMPLETED | Memory retrieval | Added explicit ownership check at memoryService boundary | Verified: 10 security tests passing |
 | H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
 | H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
 | H-P1-10 | Frontend API URL Hardcoded to localhost in Docker Build | NOT STARTED | Frontend Docker | NEXT_PUBLIC_API_URL uses localhost | Use Docker service name |
@@ -333,6 +333,16 @@ Hardening is complete when:
 - **Exploit scenario:** User guesses another user's agent ID and calls memory retrieval directly (no direct API endpoint for this, but internal risk).
 - **Recommended fix:** Ensure all memory access goes through ownership-checked paths. Add explicit agent ownership check in `retrieveMemory` as defense-in-depth.
 - **Confidence:** Medium (currently mitigated by executor ownership check, but not defense-in-depth)
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/services/memoryService.js`: Refactored `retrieveMemory(agent, queryText, userId, topK, minScore)` to require an explicit `userId`. Added `assertAgentOwnership(agent, userId)` which (1) validates that agent and userId are present, (2) compares `agent.userId.toString()` to the request user, and (3) re-verifies ownership with `Agent.findOne({ _id, userId })` so a forged in-memory agent cannot bypass the check. Throws `AGENT_REQUIRED`, `USER_CONTEXT_REQUIRED`, or `FORBIDDEN` to fail closed. Legacy `(agent, query, topK)` call shape is detected (numeric third arg) and rejected as `USER_CONTEXT_REQUIRED`.
+  - `backend/src/controllers/agent.controller.js`: `runAgent` now passes `req.user._id` to `retrieveMemory`.
+  - `backend/src/agents/handlers/llm.handler.js`: LLM step passes `context?.userId` to `retrieveMemory`.
+  - `backend/src/agents/handlers/agentCall.handler.js`: agent_call step passes `context?.userId` to `retrieveMemory`.
+  - `backend/src/agents/executor.js`: **unchanged** — existing executor ownership validation remains the first line of defense.
+- **Tests:** Added `backend/src/tests/memoryService.handler.test.js` with 10 focused security regression tests covering: legitimate user, cross-user denial, forged-userId denial, nonexistent agent, missing userId, legacy call shape, missing agent, mismatched userId representations, behavior preservation, and write-path independence. Mocks `Agent`, `AgentMemory`, and the embedding adapter.
+- **Verification:** New test suite passes 10/10. Full backend suite passes 62/62 (16 suites). No lint errors in changed files. `git diff --check` clean.
+- **Remaining risk:** `storeMemory` still relies on the caller having pre-validated the agent. This is acceptable because store is invoked by authenticated internal flows (LLM handler / agent_call handler) that already have ownership context, and storing into a foreign agent would not leak existing data — it would only create new memory. Defending store would require threading userId through every call site with no security benefit (no existing memory to read). If store is ever exposed via a new public endpoint, the same `assertAgentOwnership` helper is available for reuse.
 
 ### H-P1-8: Docker MongoDB Runs Without Authentication
 - **Category:** Security

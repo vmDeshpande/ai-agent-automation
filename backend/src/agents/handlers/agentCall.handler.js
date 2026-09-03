@@ -11,27 +11,36 @@ async function execute(step, context, agent, validatedStepId, timeoutMs) {
   let finalPrompt = `You are ${agent?.name || 'a specialized AI agent'}.`;
   if (agent?.role) finalPrompt += ` Your role is ${agent.role}.`;
   if (agent?.objective) finalPrompt += `\nObjective: ${agent.objective}`;
-  if (agent?.systemInstructions) finalPrompt += `\nStrict Instructions:\n${agent.systemInstructions}`;
+  if (agent?.systemInstructions)
+    finalPrompt += `\nStrict Instructions:\n${agent.systemInstructions}`;
 
   let memoryMetrics = null;
   if (config.useMemory && agent) {
-    const memories = await retrieveMemory(agent, inputPayload, config.memoryTopK || 5);
+    const memories = await retrieveMemory(
+      agent,
+      inputPayload,
+      context?.userId,
+      config.memoryTopK || 5
+    );
     memoryMetrics = { useMemory: true, retrievedMemoriesCount: memories.length };
     if (memories.length > 0) {
-      const memoryText = memories.map((m, i) => {
-        try {
-          const parsed = JSON.parse(m.content);
-          return `Memory ${i + 1}:\nUser: ${parsed.user}\nAssistant: ${parsed.assistant}`;
-        } catch {
-          return m.content;
-        }
-      }).join('\n\n').slice(0, 4000);
+      const memoryText = memories
+        .map((m, i) => {
+          try {
+            const parsed = JSON.parse(m.content);
+            return `Memory ${i + 1}:\nUser: ${parsed.user}\nAssistant: ${parsed.assistant}`;
+          } catch {
+            return m.content;
+          }
+        })
+        .join('\n\n')
+        .slice(0, 4000);
       finalPrompt += `\n\nMEMORY:\n${memoryText}`;
     }
   }
 
   finalPrompt += `\n\nUSER REQUEST:\n${inputPayload}`;
-  
+
   finalPrompt += `\n\nCRITICAL OUTPUT FORMAT:
 You are an automated microservice. You must respond ONLY with a raw, valid JSON object. Do not include markdown fences, greetings, or conversational text. Use this exact schema:
 {
@@ -54,8 +63,8 @@ You are an automated microservice. You must respond ONLY with a raw, valid JSON 
         agentId: agent?._id,
         agentName: agent?.name,
         provider: agent?.config?.provider,
-        model: agent?.config?.model
-      }
+        model: agent?.config?.model,
+      },
     });
   }
 
@@ -66,7 +75,7 @@ You are an automated microservice. You must respond ONLY with a raw, valid JSON 
     ...config.options,
   });
 
-    if (llmRes?.error) {
+  if (llmRes?.error) {
     return createStepResult({
       stepId: validatedStepId,
       type: 'agent_call',
@@ -79,28 +88,31 @@ You are an automated microservice. You must respond ONLY with a raw, valid JSON 
         agentId: agent?._id,
         agentName: agent?.name,
         provider: agent?.config?.provider,
-        model: agent?.config?.model
-      }
+        model: agent?.config?.model,
+      },
     });
   }
 
   let parsedOutput;
   try {
     let rawText = llmRes.text.trim();
-    rawText = rawText.replace(/^```json\n?/, '').replace(/^```\n?/, '').replace(/\n?```$/, '');
+    rawText = rawText
+      .replace(/^```json\n?/, '')
+      .replace(/^```\n?/, '')
+      .replace(/\n?```$/, '');
     const parsed = JSON.parse(rawText.trim());
-    
+
     if (typeof parsed?.content?.result === 'string') {
       parsedOutput = parsed;
     } else {
-      throw new Error("Invalid schema");
+      throw new Error('Invalid schema');
     }
   } catch (e) {
     parsedOutput = {
       from: agent?.name || 'agent',
       to: 'calling_workflow',
       type: 'agent_result',
-      content: { result: llmRes.text }
+      content: { result: llmRes.text },
     };
   }
 
@@ -109,7 +121,7 @@ You are an automated microservice. You must respond ONLY with a raw, valid JSON 
       agent,
       JSON.stringify({
         user: inputPayload,
-        assistant: JSON.stringify(parsedOutput.content)
+        assistant: JSON.stringify(parsedOutput.content),
       }),
       {
         taskId: context.taskId,
@@ -131,8 +143,8 @@ You are an automated microservice. You must respond ONLY with a raw, valid JSON 
       agentId: agent?._id,
       agentName: agent?.name,
       provider: agent?.config?.provider,
-      model: agent?.config?.model
-    }
+      model: agent?.config?.model,
+    },
   });
 }
 

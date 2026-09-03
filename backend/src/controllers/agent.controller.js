@@ -1,6 +1,6 @@
-const Agent = require("../models/agent.model");
-const { runLLM } = require("../agents/llmAdapter");
-const { storeMemory, retrieveMemory } = require("../services/memoryService");
+const Agent = require('../models/agent.model');
+const { runLLM } = require('../agents/llmAdapter');
+const { storeMemory, retrieveMemory } = require('../services/memoryService');
 
 /** Helpers */
 function sendError(res, code, msg) {
@@ -14,26 +14,38 @@ function sendOK(res, payload) {
 async function createAgent(req, res) {
   try {
     const userId = req.user._id;
-    const { name, description, role, objective, systemInstructions, avatar, type, config, capabilities, isActive, quota } = req.body;
-    if (!name) return sendError(res, 400, "name_required");
+    const {
+      name,
+      description,
+      role,
+      objective,
+      systemInstructions,
+      avatar,
+      type,
+      config,
+      capabilities,
+      isActive,
+      quota,
+    } = req.body;
+    if (!name) return sendError(res, 400, 'name_required');
     const agent = await Agent.create({
       name,
-      description: description || "",
-      role: role || "",
-      objective: objective || "",
-      systemInstructions: systemInstructions || "",
-      avatar: avatar || "",
+      description: description || '',
+      role: role || '',
+      objective: objective || '',
+      systemInstructions: systemInstructions || '',
+      avatar: avatar || '',
       userId,
-      type: type || "custom",
+      type: type || 'custom',
       config: config || {},
-      capabilities: capabilities || ["llm"],
+      capabilities: capabilities || ['llm'],
       isActive: isActive === undefined ? true : !!isActive,
       quota: quota || {},
     });
     return sendOK(res, { agent });
   } catch (err) {
-    console.error("createAgent error", err);
-    return sendError(res, 500, "server_error");
+    console.error('createAgent error', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -44,8 +56,8 @@ async function listAgents(req, res) {
     const agents = await Agent.find({ userId }).sort({ createdAt: -1 });
     return sendOK(res, { agents });
   } catch (err) {
-    console.error("listAgents error", err);
-    return sendError(res, 500, "server_error");
+    console.error('listAgents error', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -53,13 +65,13 @@ async function listAgents(req, res) {
 async function getAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
-    if (!agent) return sendError(res, 404, "not_found");
+    if (!agent) return sendError(res, 404, 'not_found');
     if (agent.userId.toString() !== req.user._id.toString())
-      return sendError(res, 403, "forbidden");
+      return sendError(res, 403, 'forbidden');
     return sendOK(res, { agent });
   } catch (err) {
-    console.error("getAgent error", err);
-    return sendError(res, 500, "server_error");
+    console.error('getAgent error', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -67,18 +79,30 @@ async function getAgent(req, res) {
 async function updateAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
-    if (!agent) return sendError(res, 404, "not_found");
+    if (!agent) return sendError(res, 404, 'not_found');
     if (agent.userId.toString() !== req.user._id.toString())
-      return sendError(res, 403, "forbidden");
-    const allowed = ["name", "description", "role", "objective", "systemInstructions", "avatar", "type", "config", "capabilities", "isActive", "quota"];
+      return sendError(res, 403, 'forbidden');
+    const allowed = [
+      'name',
+      'description',
+      'role',
+      'objective',
+      'systemInstructions',
+      'avatar',
+      'type',
+      'config',
+      'capabilities',
+      'isActive',
+      'quota',
+    ];
     allowed.forEach((k) => {
       if (req.body[k] !== undefined) agent[k] = req.body[k];
     });
     await agent.save();
     return sendOK(res, { agent });
   } catch (err) {
-    console.error("updateAgent error", err);
-    return sendError(res, 500, "server_error");
+    console.error('updateAgent error', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -86,14 +110,14 @@ async function updateAgent(req, res) {
 async function deleteAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
-    if (!agent) return sendError(res, 404, "not_found");
+    if (!agent) return sendError(res, 404, 'not_found');
     if (agent.userId.toString() !== req.user._id.toString())
-      return sendError(res, 403, "forbidden");
+      return sendError(res, 403, 'forbidden');
     await agent.deleteOne();
-    return sendOK(res, { message: "agent_deleted" });
+    return sendOK(res, { message: 'agent_deleted' });
   } catch (err) {
-    console.error("deleteAgent error", err);
-    return sendError(res, 500, "server_error");
+    console.error('deleteAgent error', err);
+    return sendError(res, 500, 'server_error');
   }
 }
 
@@ -109,15 +133,15 @@ async function deleteAgent(req, res) {
 async function runAgent(req, res) {
   try {
     const agent = await Agent.findById(req.params.id);
-    if (!agent) return sendError(res, 404, "not_found");
+    if (!agent) return sendError(res, 404, 'not_found');
     if (agent.userId.toString() !== req.user._id.toString())
-      return sendError(res, 403, "forbidden");
+      return sendError(res, 403, 'forbidden');
 
     const { prompt, useMemory = false } = req.body;
-    if (!prompt?.trim()) return sendError(res, 400, "prompt_required");
+    if (!prompt?.trim()) return sendError(res, 400, 'prompt_required');
 
-    const provider = agent.config?.provider || "groq";
-    const model = agent.config?.model || "llama-3.1-8b-instant";
+    const provider = agent.config?.provider || 'groq';
+    const model = agent.config?.model || 'llama-3.1-8b-instant';
     const temperature = agent.config?.temperature ?? 0.7;
 
     // 1. Retrieve semantic memory if enabled
@@ -126,16 +150,17 @@ async function runAgent(req, res) {
     if (agent.role) systemBlock += ` Your role is ${agent.role}.`;
     if (agent.description) systemBlock += `\nDescription: ${agent.description}`;
     if (agent.objective) systemBlock += `\nObjective: ${agent.objective}`;
-    if (agent.systemInstructions) systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
+    if (agent.systemInstructions)
+      systemBlock += `\nStrict Instructions:\n${agent.systemInstructions}`;
 
     let finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nUSER QUESTION:\n${prompt}`;
 
     if (useMemory) {
-      retrievedMemory = await retrieveMemory(agent, prompt, 5, 0.45);
+      retrievedMemory = await retrieveMemory(agent, prompt, req.user._id, 5, 0.45);
       if (retrievedMemory.length > 0) {
         const memoryText = retrievedMemory
           .map((m, i) => `Memory ${i + 1}:\n${m.content}`)
-          .join("\n\n");
+          .join('\n\n');
 
         finalPrompt = `SYSTEM INSTRUCTION:\n${systemBlock}\n\nThe following MEMORY is factual and must be used when relevant.\n\nMEMORY:\n${memoryText}\n\nUSER QUESTION:\n${prompt}`;
       }
@@ -151,11 +176,10 @@ async function runAgent(req, res) {
 
     // 3. Store conversation in memory if enabled
     if (useMemory && llmRes.text) {
-      await storeMemory(
-        agent,
-        JSON.stringify({ user: prompt, assistant: llmRes.text }),
-        { type: "conversation", source: "playground" }
-      );
+      await storeMemory(agent, JSON.stringify({ user: prompt, assistant: llmRes.text }), {
+        type: 'conversation',
+        source: 'playground',
+      });
     }
 
     return sendOK(res, {
@@ -168,8 +192,8 @@ async function runAgent(req, res) {
       meta: { provider, model, temperature },
     });
   } catch (err) {
-    console.error("runAgent error", err);
-    return sendError(res, 500, err.message || "server_error");
+    console.error('runAgent error', err);
+    return sendError(res, 500, err.message || 'server_error');
   }
 }
 
