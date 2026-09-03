@@ -17,7 +17,15 @@ type ApiOptions = RequestInit & {
   auth?: boolean; // default: true
 };
 
-export const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api`;
+/* Same-origin by default: the Next.js server proxies `/api/*` to the
+ * backend (see `frontend/next.config.js`). Setting
+ * `NEXT_PUBLIC_API_URL` to an absolute URL still works for callers
+ * that explicitly want the browser to bypass the same-origin proxy
+ * (e.g. cross-origin deployments that have already configured CORS on
+ * the backend). */
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '')}/api`
+  : '/api';
 
 export function apiUrl(path: string) {
   return `${API_BASE}${path}`;

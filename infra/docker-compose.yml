@@ -108,13 +108,16 @@ services:
       context: ..
       dockerfile: infra/Dockerfile
       target: frontend
-      args:
-        NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-5000}"
     container_name: agentautomation-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
+      # Server-only: read by next.config.js so the Next.js server can
+      # proxy /api/* and /socket.io/* to the backend container. Never
+      # sent to the browser, so the Docker-internal hostname is safe
+      # here.
+      BACKEND_INTERNAL_URL: http://backend:5000
     depends_on:
       backend:
         condition: service_healthy

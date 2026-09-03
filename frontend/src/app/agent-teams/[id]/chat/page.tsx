@@ -39,8 +39,20 @@ export default function WarRoomChat() {
   }, [messages, isTyping]);
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    const socket = io(socketUrl);
+    /* Same-origin Socket.IO: connect to the current page origin so the
+     * browser hits the Next.js rewrite at `/socket.io/*`, which is
+     * proxied to the backend. This keeps Socket.IO on the same
+     * origin as the page and works behind any reverse proxy without
+     * rebuilding the frontend. An explicit NEXT_PUBLIC_API_URL
+     * override is still honored for callers that need an absolute
+     * backend URL (e.g. cross-origin deployments with CORS already
+     * configured on the backend). */
+    const socketUrl = process.env.NEXT_PUBLIC_API_URL
+      ? process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '')
+      : typeof window !== 'undefined'
+        ? window.location.origin
+        : 'http://localhost:3000';
+    const socket = io(socketUrl, { path: '/socket.io' });
     socketRef.current = socket;
 
     socket.on('connect', () => {

@@ -724,6 +724,43 @@ Existing teams created before this fix may still have plaintext `a2aSecret` in M
 
 ---
 
+### H-P1-10 — Frontend API URL Hardcoded to localhost in Docker Build
+
+**Finding:** `infra/docker-compose.yml` built the frontend with `NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT:-5000}`. On Docker Desktop this works because the host port is published, but on native Linux Docker hosts (and any reverse-proxy or public-hostname deployment) the browser cannot reach the backend via `localhost:5000`.
+
+#### Why the Original "Use Docker Service Hostname" Fix Was Wrong
+
+`NEXT_PUBLIC_*` variables are bundled into browser JavaScript at build time. Setting `NEXT_PUBLIC_API_URL=http://backend:5000` would have made the browser try to resolve the Docker-internal `backend` hostname, which only works from inside the Docker network. A remote browser would fail to connect — and the hostname itself is information leakage.
+
+#### Architecture-Correct Fix: Same-Origin Routing via Next.js Rewrites
+
+The frontend now uses **same-origin API routing**:
+
+1. `frontend/next.config.js` defines server-side `rewrites()` that proxy `/api/*` and `/socket.io/*` to the backend using a **server-only** `BACKEND_INTERNAL_URL` env var.
+2. `frontend/src/lib/api.ts` derives `API_BASE` as the relative path `/api` when `NEXT_PUBLIC_API_URL` is unset.
+3. The Socket.IO client in the agent-teams chat connects to `window.location.origin` so WebSocket upgrades also flow through the same-origin proxy.
+
+The browser only ever sees relative paths. The Docker-internal `backend` hostname is confined to the server-side rewrite and never reaches the browser bundle.
+
+#### Why This Is Correct
+
+- **No Docker-internal hostname leakage.** The browser bundle has no reference to `backend:5000` or any other container name.
+- **Host-agnostic.** Works on Docker Desktop, native Linux Docker, behind nginx, behind Cloudflare, behind a custom domain — no rebuild required for any of these.
+- **Local development preserved.** When `BACKEND_INTERNAL_URL` is unset, the rewrites fall back to `http://localhost:5000`, which is where the backend listens by default.
+- **Backend port not exposed publicly.** With the nginx profile, only port 80 needs to be published. The browser talks to the same origin and the Next.js server proxies to the backend container internally.
+
+#### Implementation Files
+
+- `frontend/next.config.js` — `rewrites()` for `/api/*` and `/socket.io/*`
+- `frontend/src/lib/api.ts` — relative `API_BASE` default
+- `frontend/src/app/agent-teams/[id]/chat/page.tsx` — same-origin Socket.IO connect
+- `infra/docker-compose.yml` — `BACKEND_INTERNAL_URL: http://backend:5000` on the frontend service
+- `infra/Dockerfile` — `ARG/ENV BACKEND_INTERNAL_URL` with sensible default
+- `infra/.env.example` — documents the same-origin approach and the optional `NEXT_PUBLIC_API_URL` build-arg escape hatch
+- `backend/src/tests/frontendConfig.handler.test.js` — 8 regression tests for the rewrite contract
+
+---
+
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
 ### P1 — High Priority (7 remaining items)
@@ -737,6 +774,9 @@ P0 completion does not mean the platform is fully production-hardened. Remaining
 - Worker → Backend localhost coupling in Docker
 - Frontend API URL hardcoded to localhost in Docker
 - WebSocket room authorization implemented for war rooms (H-P1-11)
+- A2A team secret exposure (H-P1-12) — secret hashed, not returned
+- Worker → Backend URL in Docker (H-P1-9) — uses `backend:5000` service hostname
+- Frontend API URL in Docker (H-P1-10) — same-origin via Next.js rewrites, no browser-facing Docker-internal hostname
 - Frontend CSP not configured (Next.js layer)
 
 ### P2 — Medium Priority (10 items)
