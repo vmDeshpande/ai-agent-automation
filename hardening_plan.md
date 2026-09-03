@@ -90,7 +90,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
 | H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
 | H-P1-10 | Frontend API URL Hardcoded to localhost in Docker Build | NOT STARTED | Frontend Docker | NEXT_PUBLIC_API_URL uses localhost | Use Docker service name |
-| H-P1-11 | No WebSocket Room Authorization | NOT STARTED | Socket.IO | No per-room ownership verification | Add room authorization middleware |
+| H-P1-11 | No WebSocket Room Authorization | COMPLETED | Socket.IO | Server-side ownership verification for workflow/team war rooms. Token-required, Mongoose-based authorization with explicit forbidden response. | Verified: 8 security tests passing |
 | H-P1-12 | a2aSecret Exposed in Team Creation Response | COMPLETED | Agent teams | Secret no longer returned or stored in plaintext. SHA-256 hash stored, timing-safe verification, legacy migration. | Verified: 8 security tests passing, backend tests passing |
 | H-P1-13 | Frontend CSP Not Configured | NOT STARTED | Next.js frontend | Express API CSP does not protect frontend HTML/JS. Next.js app needs CSP configured at application layer. | Configure CSP in Next.js/document-serving layer |
 
@@ -368,12 +368,28 @@ Hardening is complete when:
 - **Category:** Security
 - **Severity:** P1
 - **Component:** Socket.IO
-- **File:** `backend/src/utils/socket.js`
-- **Evidence:** Socket.IO initialized with wildcard CORS. No per-room authorization beyond internal broadcast token.
-- **Impact:** Any authenticated user could potentially join any `war_room_` if client-side code is modified.
-- **Exploit scenario:** User modifies frontend JS to join another user's war room and receives execution progress.
-- **Recommended fix:** Implement Socket.IO middleware that verifies user ownership of `workflowId`/`teamId` before allowing room join.
-- **Confidence:** Medium
+- **File:** `backend/src/utils/socket.js`, `backend/src/utils/socketHandlers.js`, `backend/server.js`
+- **Evidence:** Previously, the `join_war_room` event handler in `server.js` authorized the join only by checking whether the workflow or team document was owned by the JWT user. While this did perform server-side verification, the implementation was inline in the server entrypoint, disconnected the socket on any error (including transient DB errors), and did not return a clean error to the client.
+- **Impact:** Authorization was correct in principle but fragile in implementation. A misconfiguration or DB error would silently disconnect a legitimate user; tests could not exercise the handler in isolation.
+- **Exploit scenario:** The previous implementation was not exploitable because the DB query did verify ownership, but the lack of testable architecture and the use of `socket.disconnect()` on any error made the boundary hard to audit.
+- **Recommended fix:** Move socket authorization into a dedicated, testable module that performs explicit ownership verification and returns a clean error rather than disconnecting.
+- **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/utils/socketHandlers.js` (new) — Dedicated `setupSocketHandlers(io)` module. Verifies JWT, looks up the workflow or team by `_id`, requires `userId` or `ownerId` to match the authenticated user, then joins the `war_room_<id>` room. Returns a callback response `{ ok, error }` on failure rather than disconnecting the socket.
+  - `backend/src/utils/socket.js` — Refactored to expose `__setIO` for test injection while keeping the public `init` / `getIO` API. CORS configuration unchanged.
+  - `backend/server.js` — Calls `setupSocketHandlers(io)` after `socketUtil.init(server)`. The inline `join_war_room` handler was removed.
+- **Tests:** `backend/src/tests/socketAuth.security.test.js` (8 tests)
+  - Allows own workflow room
+  - Rejects another user's workflow room
+  - Rejects nonexistent workflow room
+  - Allows own agent-team room
+  - Rejects another user's agent-team room
+  - Rejects without token
+  - Rejects with invalid token
+  - Rejects when neither `workflowId` nor `teamId` is provided
+- **Verification:** 8 security tests passing; existing backend tests remain passing (52 passed, 15 suites).
+- **Note:** The internal worker→backend broadcast path (`/api/internal/broadcast`) is unchanged and remains protected by `INTERNAL_AUTH_TOKEN`. The frontend is expected to send the `workflowId` (or `teamId`) in the `join_war_room` event payload; the server verifies ownership of the referenced resource before joining the room.
 
 ### H-P1-12: a2aSecret Exposed in Team Creation Response
 - **Category:** Security

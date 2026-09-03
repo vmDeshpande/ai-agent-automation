@@ -9,7 +9,30 @@ const SystemSettings = require('../models/systemSettings.model');
 const { processDocument, queryDocuments } = require('../services/documentService');
 const { runLLM } = require('../agents/llmAdapter');
 
-const upload = multer({ storage: multer.memoryStorage() });
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const ALLOWED_MIME_TYPES = {
+  pdf: ['application/pdf'],
+  txt: ['text/plain'],
+  md: ['text/markdown', 'text/x-markdown', 'text/plain'],
+  json: ['application/json', 'text/json', 'text/plain'],
+  csv: ['text/csv', 'application/csv', 'text/plain'],
+};
+
+const PDF_MAGIC = Buffer.from([0x25, 0x50, 0x44, 0x46]);
+
+function detectExtensionFromMagic(buffer) {
+  if (!buffer || buffer.length < 4) return null;
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return 'pdf';
+  }
+  return null;
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+});
 const MAX_SELECTED_DOCUMENTS = 10;
 const MAX_RAG_CONTEXT_CHARS = 12000;
 const DOCUMENT_PROCESSING_TIMEOUT_MS = 2 * 60 * 1000;
@@ -52,6 +75,35 @@ async function uploadDocument(req, res) {
     }
 
     const extension = file.originalname.split('.').pop().toLowerCase();
+    const declaredMime = (file.mimetype || '').toLowerCase();
+
+    const allowedMimes = ALLOWED_MIME_TYPES[extension];
+
+    if (!allowedMimes) {
+      return res.status(400).json({
+        ok: false,
+        error: 'unsupported_file_type',
+      });
+    }
+
+    if (!allowedMimes.includes(declaredMime)) {
+      return res.status(415).json({
+        ok: false,
+        error: 'mime_type_not_allowed',
+        allowed: allowedMimes,
+        received: declaredMime,
+      });
+    }
+
+    if (extension === 'pdf') {
+      const magicExt = detectExtensionFromMagic(file.buffer);
+      if (magicExt !== 'pdf') {
+        return res.status(400).json({
+          ok: false,
+          error: 'file_content_does_not_match_extension',
+        });
+      }
+    }
 
     let text = '';
 
@@ -69,12 +121,6 @@ async function uploadDocument(req, res) {
     } else if (extension === 'csv') {
       /* ---------- CSV ---------- */
       text = file.buffer.toString('utf-8');
-    } else {
-      /* ---------- UNSUPPORTED ---------- */
-      return res.status(400).json({
-        ok: false,
-        error: 'unsupported_file_type',
-      });
     }
 
     if (!text.trim()) {
@@ -138,6 +184,14 @@ async function uploadDocument(req, res) {
   } catch (err) {
     console.error('Document upload error:', err);
 
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        ok: false,
+        error: 'file_too_large',
+        maxBytes: MAX_UPLOAD_BYTES,
+      });
+    }
+
     res.status(500).json({
       ok: false,
       error: 'upload_failed',
@@ -166,12 +220,7 @@ async function listDocuments(req, res) {
 
 async function chatWithDocument(req, res) {
   try {
-    const {
-      documentId,
-      documentIds,
-      question,
-      strategy = 'auto',
-    } = req.body;
+    const { documentId, documentIds, question, strategy = 'auto' } = req.body;
 
     if (typeof question !== 'string' || !question.trim()) {
       return res.status(400).json({
@@ -447,10 +496,7 @@ ${trimmedQuestion}
   } catch (err) {
     console.error('Document query error:', err);
 
-    if (
-      err.message &&
-      err.message.includes('Retrieval strategy')
-    ) {
+    if (err.message && err.message.includes('Retrieval strategy')) {
       return res.status(400).json({
         ok: false,
         error: 'invalid_retrieval_strategy',

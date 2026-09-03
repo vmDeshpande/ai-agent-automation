@@ -461,6 +461,60 @@ protected API / internal endpoint
 
 ## P1 — High Priority Security Hardening
 
+### H-P1-11 — WebSocket Room Authorization
+
+#### Original Vulnerability
+
+The original Socket.IO setup authorized the `join_war_room` event inline in `backend/server.js`. While the implementation did perform a database lookup to verify ownership, it was not isolated in a testable module and called `socket.disconnect()` on any error — including transient database errors — which made the authorization boundary hard to audit and unreliable in practice.
+
+#### Current Secure Architecture
+
+Socket.IO handlers are now registered through a dedicated module:
+
+- `backend/src/utils/socketHandlers.js` exports `setupSocketHandlers(io)` which registers the `connection` event and the `join_war_room` event.
+- `backend/server.js` calls `setupSocketHandlers(io)` after `socketUtil.init(server)`.
+- `backend/src/utils/socket.js` exposes `__setIO` for test injection while preserving the existing public API (`init`, `getIO`).
+
+The frontend continues to send `{ teamId, token }` or `{ workflowId, token }` to the `join_war_room` event. The server is now the sole authority on whether the socket is allowed to join the room.
+
+#### How Room Authorization Works
+
+1. The socket emits `join_war_room` with `{ workflowId, teamId, token }`.
+2. The server verifies the JWT using `process.env.JWT_SECRET` (the same secret used by the REST API).
+3. The server extracts the authenticated `userId` from the token.
+4. The server performs a database lookup on the appropriate collection:
+   - `Workflow.findOne({ _id: workflowId, $or: [{ userId }, { ownerId }] })`, or
+   - `AgentTeam.findOne({ _id: teamId, $or: [{ userId }, { ownerId }] })`.
+5. If the resource is found **and** the authenticated user owns it (via `userId` or `ownerId`), the socket joins `war_room_<id>`.
+6. If the resource does not exist, the user does not own it, the token is invalid, or no resource ID is provided, the server returns a callback response `{ ok: false, error }` and does **not** join the room.
+7. The socket is **not** disconnected on authorization failure — it remains connected for other legitimate operations.
+
+#### What Ownership Checks Are Performed
+
+- **Workflow rooms:** Server queries the `workflows` collection with `{ _id, $or: [{ userId }, { ownerId }] }`.
+- **Agent-team rooms:** Server queries the `agentteams` collection with the same `$or` pattern.
+- **Nonexistent resources:** Same response as unauthorized (`{ ok: false, error: 'forbidden' }`) to avoid leaking the existence of other users' resources.
+
+#### What Happens on Unauthorized Joins
+
+- The callback receives `{ ok: false, error: 'forbidden' }` (or `'unauthorized'` / `'invalid_request'` depending on the failure).
+- The socket is **not** added to the room.
+- The socket is **not** disconnected.
+- No further events are emitted to the unauthorized socket for that room.
+
+#### Internal Worker Broadcasts
+
+The internal worker→backend broadcast path (`/api/internal/broadcast`) is unchanged. It remains protected by `INTERNAL_AUTH_TOKEN` and is the only way the worker emits progress events into a `war_room_<id>` room.
+
+#### Implementation Files
+
+- `backend/src/utils/socketHandlers.js` — Dedicated handler module
+- `backend/src/utils/socket.js` — Refactored with `__setIO` for testability
+- `backend/server.js` — Calls `setupSocketHandlers(io)`
+- `backend/src/tests/socketAuth.security.test.js` — 8 security regression tests
+
+---
+
 ### H-P1-12 — A2A Secret Exposure
 
 #### Original Vulnerability
@@ -570,7 +624,7 @@ Existing teams created before this fix may still have plaintext `a2aSecret` in M
 
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
-### P1 — High Priority (10 remaining items)
+### P1 — High Priority (9 remaining items)
 
 - Broad CORS on API (partially addressed by P0-2; API CORS now restricted)
 - Missing CSP/HSTS in Helmet — **backend Express JSON API completed; frontend CSP is a separate future task**
@@ -582,7 +636,7 @@ P0 completion does not mean the platform is fully production-hardened. Remaining
 - Docker MongoDB runs without authentication
 - Worker → Backend localhost coupling in Docker
 - Frontend API URL hardcoded to localhost in Docker
-- No WebSocket room authorization
+- WebSocket room authorization implemented for war rooms (H-P1-11)
 - Frontend CSP not configured (Next.js layer)
 
 ### P2 — Medium Priority (10 items)
