@@ -99,7 +99,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | ID | Finding | Status | Affected Area | Description | Recommended Next Phase |
 |---|---|---|---|---|---|
 | H-P2-1 | No Graceful Worker Shutdown | COMPLETED | Worker runtime | Graceful SIGTERM/SIGINT handling. Shutdown flag stops new claims; current task finishes with a hard cap. Idempotent handlers. | Verified: 11 new tests passing, 94/94 full suite |
-| H-P2-2 | Stale Task Recovery Missing | NOT STARTED | Worker / Task system | No recovery for stuck tasks | Add stale-task detection |
+| H-P2-2 | Stale Task Recovery Missing | COMPLETED | Worker / Task system | Race-safe atomic per-task recovery. Requeues tasks with attempts < maxAttempts; marks exhausted tasks as failed. Opportunistic sweep inside claimNextTask. | Verified: 18 new tests passing, 112/112 full suite |
 | H-P2-3 | No Health Check Endpoint Validation | NOT STARTED | Backend | /health does not check dependencies | Add /ready endpoint |
 | H-P2-4 | Dashboard Queries Hit MongoDB Directly | NOT STARTED | Backend API | 12 parallel countDocuments per request | Add caching layer |
 | H-P2-5 | Missing Database Indexes | NOT STARTED | Database | No indexes on workflowId, startedAt, etc. | Add indexes |
@@ -516,6 +516,45 @@ Hardening is complete when:
 - **Impact:** Tasks remain `running` forever after worker crash; never retried.
 - **Recommended fix:** Add stale-task detection based on `startedAt` timestamp. Re-queue or fail tasks running longer than threshold.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/agents/queueService.js`:
+    - Removed the previous blanket `updateMany` that reset any `running` task older than 15 minutes to `pending` without regard to attempts or recovery semantics.
+    - Added `recoverOneStaleTask(now)`: a two-step atomic recovery primitive. **Step 1** uses `findOneAndUpdate({ status: 'running', startedAt: { $lt: threshold } }, { $set: { metadata.staleSweepAt, metadata.staleSweepStatus: 'in_progress' } }, { sort: { startedAt: 1 }, returnDocument: 'after' }).lean()` to atomically claim a single stale task. **Step 2** uses `findOneAndUpdate({ _id, startedAt: <stale.startedAt> }, ...)` to finalize. The `_id + startedAt` guard in Step 2 means a concurrent recoverer that already finalized the task (and changed `startedAt`) will see `null` returned and abort — this is the race-safety guarantee.
+    - If `attempts < maxAttempts`, the task is set to `status: 'pending'`, `startedAt: null`, with a `retryHistory` entry `kind: 'stale_recovery', action: 'requeued'`.
+    - If `attempts >= maxAttempts`, the task is set to `status: 'failed'`, `completedAt: now`, `metadata.failureReason: 'stale_recovery_exhausted'`, with a `retryHistory` entry `action: 'failed', reason: 'max_attempts_exhausted'`. No infinite retry loop.
+    - Added `recoverStaleTasks({ maxSweep = 25, now })`: bounded sweep that calls `recoverOneStaleTask` repeatedly. Default `maxSweep` is 25 to prevent a backlog after a long outage from creating a thundering herd. Per-iteration try/catch so a transient DB error on one task does not abort the sweep.
+    - `claimNextTask` now calls `recoverStaleTasks({ maxSweep: 25 })` before claiming, wrapped in its own try/catch so a recovery failure does not block normal claiming. The next `claimNextTask` call retries the sweep.
+    - Configurable via `WORKER_STALE_TASK_TIMEOUT_MS` (default 900 000 ms = 15 min, matching the previous inline value). `WORKER_MAX_ATTEMPTS` continues to control retry semantics.
+    - Exported: `recoverStaleTasks`, `recoverOneStaleTask`, `STALE_TASK_TIMEOUT_MS`.
+  - `backend/src/agents/runner.js`: **unchanged** — `claimNextTask` is the only call site, and the existing loop already invokes it every poll cycle. H-P2-1 graceful shutdown semantics are preserved unchanged.
+- **Race-safety explanation:** each recovery is a two-step atomic update against the same `_id`. Step 1 atomically marks the doc with `metadata.staleSweepAt` so a concurrent recoverer can see it has been picked up. Step 2's `findOneAndUpdate({ _id, startedAt: <captured from step 1> })` is the second atomic gate — if a different process already finalized the task (changing `startedAt`), the filter does not match, `null` is returned, and the late recoverer aborts cleanly. Multiple workers running the sweep concurrently cannot double-recover the same task.
+- **Retry / attempt behavior:** preserved from the existing `completeTask` semantics. A stale task with `attempts < maxAttempts` becomes `pending` and the next `claimNextTask` will pick it up; `attempts` is incremented on claim, so a task that has already been re-queued and failed multiple times will eventually be marked `failed` permanently by either the recovery sweep (if it goes stale again) or by `completeTask` (if it fails normally).
+- **Tests:** `backend/src/tests/queueService.staleRecovery.handler.test.js` (18 tests):
+  1. `recoverOneStaleTask` returns null when no stale running task exists.
+  2. A fresh running task (startedAt within threshold) is NOT recovered.
+  3. A task with no `startedAt` is NEVER treated as stale.
+  4. A stale running task with `attempts < maxAttempts` is requeued to `pending`.
+  5. A stale running task with `attempts == maxAttempts` is marked `failed` (exhausted).
+  6. A stale running task with `attempts > maxAttempts` is also marked `failed`.
+  7. Only the oldest stale task is recovered per call (FIFO via `sort: { startedAt: 1 }`).
+  8. `recoverStaleTasks` recovers up to `maxSweep` tasks per call.
+  9. `recoverStaleTasks` returns 0 when no stale tasks exist.
+  10. `recoverStaleTasks` stops after exhausting the backlog.
+  11. Two concurrent `recoverOneStaleTask` calls cannot recover the same task twice (race-safety).
+  12. A worker whose task is currently running (fresh `startedAt`) is never re-claimed by another recovery.
+  13. `claimNextTask` runs a recovery sweep before claiming a normal pending task.
+  14. A recovery sweep error does NOT block normal `claimNextTask` (resilience).
+  15. Normal pending claim still works when no stale tasks exist.
+  16. Normal retrying claim still works.
+  17. An exhausted task (`attempts >= maxAttempts`) is not claimed.
+  18. Importing `queueService` does not regress the H-P2-1 runner shutdown state machine.
+- **Verification:** 18/18 new tests pass. Full backend suite: 20 suites, 112/112 pass. Lint clean for all changed files. `git diff --check` clean (only the standard LF/CRLF informational warnings on the pre-existing mixed-EOL repo).
+- **Remaining risks:**
+  - The opportunistic sweep runs on every `claimNextTask` call, so a long backlog after a worker outage takes `Math.ceil(backlog / 25)` poll cycles to drain. The `maxSweep: 25` cap is intentional to bound the work per claim, but operators with very large backlogs may want a separate dedicated recovery cron.
+  - `recoverStaleTasks` runs a `for` loop with `await` inside. A pathological DB latency spike (e.g. a primary step-down) could make one `claimNextTask` call take seconds. This is bounded by `maxSweep: 25` and the per-iteration try/catch; the next `claimNextTask` will continue the sweep.
+  - The default `WORKER_STALE_TASK_TIMEOUT_MS` of 15 minutes matches the previous inline behavior. For workflows with legitimately long-running steps (e.g. multi-hour batch processing), operators must set this higher. There is no per-task override.
+  - H-P2-2 does NOT add a dedicated "stale-task recovery" cron. The recovery is opportunistic (runs when a worker tries to claim). If all workers are down for a long time, no recovery runs — but this is fine because no work is being done anyway, and the moment a worker starts up, the first `claimNextTask` triggers a sweep.
 
 ### H-P2-3: No Health Check Endpoint Validation
 - **Category:** Reliability
