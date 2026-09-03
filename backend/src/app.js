@@ -32,8 +32,23 @@ app.set('trust proxy', 1);
 
 app.use(corsMiddleware);
 app.use(helmetMiddleware);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Body parser with a 2 MB global cap. The public webhook route (/webhook/*)
+// is excluded here and applies its own stricter 1 MB limit in
+// routes/webhook.public.routes.js, since webhook bodies are externally
+// controlled and must be tightly bounded to prevent DoS.
+const globalJsonParser = express.json({ limit: '2mb' });
+const globalUrlencodedParser = express.urlencoded({ limit: '2mb', extended: true });
+
+app.use((req, res, next) => {
+  if (req.path === '/webhook' || req.path.startsWith('/webhook/')) {
+    return next();
+  }
+  return globalJsonParser(req, res, (err) => {
+    if (err) return next(err);
+    return globalUrlencodedParser(req, res, next);
+  });
+});
 
 // Internal route for the runner to broadcast socket events securely
 app.post('/api/internal/broadcast', (req, res) => {

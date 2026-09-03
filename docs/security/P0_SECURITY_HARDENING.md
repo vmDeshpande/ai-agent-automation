@@ -515,6 +515,32 @@ The internal worker→backend broadcast path (`/api/internal/broadcast`) is unch
 
 ---
 
+### H-P1-5 — Webhook Public Endpoint Payload Size Limit
+
+#### Original Vulnerability
+
+The public webhook receiver at `POST /webhook/:source` had no route-level body size limit. The global `express.json()` parser was configured without a `limit` option, meaning webhook bodies of arbitrary size could be buffered into memory, enabling denial-of-service attacks.
+
+#### How It Works Now
+
+- `backend/src/routes/webhook.public.routes.js` registers route-level `express.json({ limit: '1mb' })` and `express.urlencoded({ limit: '1mb', extended: true })` middleware.
+- A body-parse error handler maps `entity.too.large` to `413 payload_too_large` and `entity.parse.failed` to `400 invalid_json`.
+- `backend/src/app.js` sets a 2 MB global cap on the body parser and excludes the `/webhook` path from the global parser, so the route-level 1 MB limit is the one that actually applies to webhook requests.
+
+#### Why a 1 MB Limit
+
+- Webhook payloads from typical providers (GitHub, GitLab, Stripe, etc.) are well under 1 MB.
+- 1 MB is sufficient for the application's document ingestion use case while preventing memory exhaustion.
+- The limit applies to both `application/json` and `application/x-www-form-urlencoded` content types.
+
+#### Implementation Files
+
+- `backend/src/routes/webhook.public.routes.js` — Route-level body parser and error handler
+- `backend/src/app.js` — Global body parser cap and webhook path exclusion
+- `backend/src/tests/webhookPayloadSize.test.js` — 6 security regression tests
+
+---
+
 ### H-P1-12 — A2A Secret Exposure
 
 #### Original Vulnerability
@@ -624,13 +650,12 @@ Existing teams created before this fix may still have plaintext `a2aSecret` in M
 
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
-### P1 — High Priority (9 remaining items)
+### P1 — High Priority (8 remaining items)
 
 - Broad CORS on API (partially addressed by P0-2; API CORS now restricted)
 - Missing CSP/HSTS in Helmet — **backend Express JSON API completed; frontend CSP is a separate future task**
 - No schema validation on all API inputs
 - Document upload lacks size/MIME enforcement
-- Webhook public endpoint lacks payload size limit
 - Incomplete rate limiting
 - Agent memory cross-user risk
 - Docker MongoDB runs without authentication

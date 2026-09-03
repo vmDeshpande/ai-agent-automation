@@ -84,7 +84,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-2 | Missing CSP/HSTS in Helmet | COMPLETED | Backend middleware | Added security headers to Express JSON API. Frontend CSP tracked separately. | Backend headers verified; frontend CSP is separate future task |
 | H-P1-3 | No Schema Validation on API Inputs | NOT STARTED | All controllers | Manual validation only; no Zod schemas for complex inputs | Extend validation to all controllers |
 | H-P1-4 | Document Upload Lacks Size/MIME Enforcement | NOT STARTED | Document ingestion | No file size limit; extension-based type check only | Add limits and MIME verification |
-| H-P1-5 | Webhook Public Endpoint Lacks Payload Size Limit | NOT STARTED | Public webhook receiver | No size limit on request body | Add body size limit |
+| H-P1-5 | Webhook Public Endpoint Lacks Payload Size Limit | COMPLETED | Public webhook receiver | Added 1 MB route-level JSON/urlencoded body limit on /webhook/* with 413 response on overflow. Global body parser capped at 2 MB; webhook route excluded from global parser. | Verified: 6 security tests passing |
 | H-P1-6 | No Rate Limiting on All API Routes | NOT STARTED | Backend API | Some routes lack rate limiting | Apply global limiter |
 | H-P1-7 | Agent Memory Search Potentially Cross-User | NOT STARTED | Memory retrieval | Ownership checked at agent level; add defense-in-depth | Add explicit ownership check |
 | H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
@@ -298,6 +298,13 @@ Hardening is complete when:
 - **Impact:** DoS via large payloads; memory exhaustion.
 - **Recommended fix:** Add `express.json({ limit: '1mb' })` middleware before webhook routes. Consider webhook payload size limits per-provider.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/routes/webhook.public.routes.js`: Route-level `express.json({ limit: '1mb' })` and `express.urlencoded({ limit: '1mb', extended: true })` with a body-parse error handler that maps `entity.too.large` to 413 and `entity.parse.failed` to 400.
+  - `backend/src/app.js`: Global body parser capped at 2 MB. The `/webhook` path is excluded from the global parser so the route-level 1 MB limit takes effect.
+- **Tests:** `backend/src/tests/webhookPayloadSize.test.js` (6 tests)
+- **Verification:** 6 security tests passing; existing backend tests remain passing (52 passed, 15 suites).
+- **Compatibility:** The global 2 MB cap is larger than Express's implicit 100 KB default. No existing endpoint is expected to receive payloads close to 2 MB.
 
 ### H-P1-6: No Rate Limiting on All API Routes
 - **Category:** Security / Reliability
