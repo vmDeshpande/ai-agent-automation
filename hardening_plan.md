@@ -85,7 +85,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P1-3 | No Schema Validation on API Inputs | NOT STARTED | All controllers | Manual validation only; no Zod schemas for complex inputs | Extend validation to all controllers |
 | H-P1-4 | Document Upload Lacks Size/MIME Enforcement | NOT STARTED | Document ingestion | No file size limit; extension-based type check only | Add limits and MIME verification |
 | H-P1-5 | Webhook Public Endpoint Lacks Payload Size Limit | COMPLETED | Public webhook receiver | Added 1 MB route-level JSON/urlencoded body limit on /webhook/* with 413 response on overflow. Global body parser capped at 2 MB; webhook route excluded from global parser. | Verified: 6 security tests passing |
-| H-P1-6 | No Rate Limiting on All API Routes | NOT STARTED | Backend API | Some routes lack rate limiting | Apply global limiter |
+| H-P1-6 | No Rate Limiting on All API Routes | COMPLETED | Backend API | Single API-wide baseline rate limiter applied at /api mount. Per-route duplicates removed to prevent double application. | Verified: 8 security tests passing |
 | H-P1-7 | Agent Memory Search Potentially Cross-User | NOT STARTED | Memory retrieval | Ownership checked at agent level; add defense-in-depth | Add explicit ownership check |
 | H-P1-8 | Docker MongoDB Runs Without Authentication | COMPLETED | Infrastructure | Added MongoDB root and application user authentication in Docker. Least-privilege app user created by init container. | Verified Docker auth configuration; backend MONGO_URI supports authenticated connection |
 | H-P1-9 | Worker → Backend localhost Coupling in Docker | NOT STARTED | Worker runtime | localhost default breaks Docker networking | Set correct service URL |
@@ -316,6 +316,11 @@ Hardening is complete when:
 - **Exploit scenario:** Attacker floods `/api/insights` with requests causing expensive aggregation queries.
 - **Recommended fix:** Apply `globalLimiter` as `app.use('/api', globalLimiter)` before route mounting. Remove per-route limiter applications to avoid double-application.
 - **Confidence:** Medium (needs verification of which routes actually have limiters applied)
+- **Status:** ✅ COMPLETED
+- **Implementation:** `app.use('/api', globalLimiter)` is now applied once, before all `/api/*` route mounts in `app.js`. The per-route `globalLimiter` applications in `app.js` were removed to prevent double-counting. All `/api/*` routes now inherit the baseline 15-minute / 100-request limit automatically.
+- **Tests:** `backend/src/tests/rateLimit.security.test.js` (8 tests)
+- **Verification:** 8 security tests passing; existing backend tests remain passing (52 passed, 15 suites).
+- **Compatibility:** `authLimiter`, `dashboardLimiter`, `expensiveLimiter`, and `webhookLimiter` continue to apply where intentionally stricter. The internal `/api/internal/broadcast` endpoint continues to be protected by `INTERNAL_AUTH_TOKEN`. `trust proxy` is set to `1`, so `express-rate-limit` uses the first proxy hop for IP detection — correct for the documented reverse-proxy deployment.
 
 ### H-P1-7: Agent Memory Search Potentially Cross-User
 - **Category:** Security

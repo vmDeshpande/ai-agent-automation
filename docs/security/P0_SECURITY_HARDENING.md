@@ -541,6 +541,82 @@ The public webhook receiver at `POST /webhook/:source` had no route-level body s
 
 ---
 
+### H-P1-6 — Incomplete Rate Limiting
+
+#### Original Vulnerability
+
+The `globalLimiter` middleware existed but was applied per-route in `app.js`. Any new `/api/*` route added without explicitly attaching `globalLimiter` would be unprotected. The audit specifically called out `/api/logs`, `/api/system`, `/api/telemetry`, `/api/insights`, `/api/mcp`, `/api/keys` as potentially unprotected.
+
+#### Current Rate-Limit Architecture
+
+A single API-wide baseline rate limiter is now applied at the `/api` mount point:
+
+```js
+app.use('/api', globalLimiter);
+```
+
+All `/api/*` routes inherit this baseline (15-minute window, 100 requests by default; configurable via `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_GLOBAL_MAX`).
+
+#### Interaction with Route-Specific Limiters
+
+- `authLimiter` — Stricter, applied to `/api/auth/register` and `/api/auth/login` (50 requests / 15 min). Stacks with the global baseline.
+- `dashboardLimiter` — 100 requests / 1 min on `/api/dashboard/*` endpoints (defined in the route file). Stacks with the global baseline.
+- `expensiveLimiter` — 10 requests / 1 min on document upload, document chat, and workflow run endpoints (defined in route files). Stacks with the global baseline.
+- `webhookLimiter` — 20 requests / 1 min on the `/webhook` public receiver. Does NOT apply under `/api`.
+
+The per-route `globalLimiter` applications in `app.js` were removed to prevent double-counting.
+
+#### Protected API Surfaces
+
+Every `/api/*` route is now protected by the baseline, including:
+
+- `/api/auth` (baseline + `authLimiter` on register/login)
+- `/api/dashboard` (baseline + `dashboardLimiter` per endpoint)
+- `/api/tasks`
+- `/api/documents` (baseline + `expensiveLimiter` on upload/chat)
+- `/api/workflows`
+- `/api/agents`
+- `/api/agent-teams`
+- `/api/schedules`
+- `/api/webhooks`
+- `/api/templates`
+- `/api/logs`
+- `/api/settings`
+- `/api/system`
+- `/api/memory`
+- `/api/assistant`
+- `/api/telemetry`
+- `/api/insights`
+- `/api/mcp`
+- `/api/keys`
+- `/api/workflows/public`
+
+#### Test Coverage
+
+`backend/src/tests/rateLimit.security.test.js` — 8 tests:
+
+1. Requests below the limit succeed
+2. Requests at/over the limit return 429
+3. Previously-unprotected endpoints are now protected under `/api`
+4. `/health` is not rate limited
+5. `/webhook/*` is not rate limited by `globalLimiter`
+6. Nested API routes are rate limited
+7. Middleware is applied exactly once per request
+8. Configured limit values are sensible
+
+#### Compatibility Considerations
+
+- The internal `/api/internal/broadcast` endpoint continues to be protected by `INTERNAL_AUTH_TOKEN`, not by the rate limiter.
+- `trust proxy` is set to `1`, so `express-rate-limit` uses the first proxy hop for IP detection. This is correct for the documented reverse-proxy deployment but should be reviewed if the deployment topology changes.
+- Adding a new `/api/*` route now automatically inherits the baseline; no per-route changes are needed.
+
+#### Implementation Files
+
+- `backend/src/app.js` — Single `/api` mount of `globalLimiter`; per-route duplicates removed
+- `backend/src/tests/rateLimit.security.test.js` — 8 security regression tests
+
+---
+
 ### H-P1-12 — A2A Secret Exposure
 
 #### Original Vulnerability
@@ -650,13 +726,12 @@ Existing teams created before this fix may still have plaintext `a2aSecret` in M
 
 P0 completion does not mean the platform is fully production-hardened. Remaining work is tracked in `hardening_plan.md` and is organized as follows:
 
-### P1 — High Priority (8 remaining items)
+### P1 — High Priority (7 remaining items)
 
 - Broad CORS on API (partially addressed by P0-2; API CORS now restricted)
 - Missing CSP/HSTS in Helmet — **backend Express JSON API completed; frontend CSP is a separate future task**
 - No schema validation on all API inputs
 - Document upload lacks size/MIME enforcement
-- Incomplete rate limiting
 - Agent memory cross-user risk
 - Docker MongoDB runs without authentication
 - Worker → Backend localhost coupling in Docker
