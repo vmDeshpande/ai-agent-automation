@@ -784,7 +784,8 @@ P0 completion does not mean the platform is fully production-hardened. Remaining
 - No graceful worker shutdown
 - Stale task recovery missing
 - Health check endpoint validation incomplete
-- Dashboard queries hit MongoDB directly
+- Dashboard queries hit MongoDB directly — **COMPLETED**: Redis caching layer added for `getDashboardStats` and `getExecutionTrend` with user-isolated keys, TTL, and graceful fallback when Redis is unavailable
+- Missing database indexes — **COMPLETED**: Added `Task` indexes on `workflowId`, `startedAt`, and compound `{userId, status, createdAt}`; added `Workflow` indexes on `status`, `agentId`, and compound `{userId, status}`
 - Missing database indexes
 - No request correlation IDs
 - Agent call handler JSON parsing fragile

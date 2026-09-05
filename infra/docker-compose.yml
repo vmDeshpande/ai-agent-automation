@@ -18,6 +18,21 @@ services:
       retries: 10
       start_period: 20s
 
+  redis:
+    image: redis:7-alpine
+    container_name: agentautomation-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   mongo-init-replica:
     image: mongo:7
     depends_on:
@@ -145,4 +160,5 @@ services:
     restart: unless-stopped
 volumes:
   mongo_data:
+  redis_data:
 

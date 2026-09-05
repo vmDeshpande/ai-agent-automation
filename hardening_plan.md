@@ -101,8 +101,8 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 | H-P2-1 | No Graceful Worker Shutdown | COMPLETED | Worker runtime | Graceful SIGTERM/SIGINT handling. Shutdown flag stops new claims; current task finishes with a hard cap. Idempotent handlers. | Verified: 11 new tests passing, 94/94 full suite |
 | H-P2-2 | Stale Task Recovery Missing | COMPLETED | Worker / Task system | Race-safe atomic per-task recovery. Requeues tasks with attempts < maxAttempts; marks exhausted tasks as failed. Opportunistic sweep inside claimNextTask. | Verified: 18 new tests passing, 112/112 full suite |
 | H-P2-3 | No Health Check Endpoint Validation | COMPLETED | Backend | Added /ready dependency check (MongoDB). /health preserved as lightweight liveness. | Verified: 11 new tests passing, 123/123 full suite |
-| H-P2-4 | Dashboard Queries Hit MongoDB Directly | NOT STARTED | Backend API | 12 parallel countDocuments per request | Add caching layer |
-| H-P2-5 | Missing Database Indexes | NOT STARTED | Database | No indexes on workflowId, startedAt, etc. | Add indexes |
+| H-P2-4 | Dashboard Queries Hit MongoDB Directly | COMPLETED | Backend API | 12 parallel countDocuments per request | Redis caching layer added with TTL, user-isolated keys, graceful fallback |
+| H-P2-5 | Missing Database Indexes | COMPLETED | Database | No indexes on workflowId, startedAt, etc. | Added indexes on Task (workflowId, startedAt, compound userId+status+createdAt) and Workflow (status, agentId, compound userId+status) |
 | H-P2-6 | No Request Correlation IDs | NOT STARTED | Backend | No correlation ID propagation | Add correlation middleware |
 | H-P2-7 | Agent Call Handler Parses LLM Output as JSON Without Safeguards | NOT STARTED | Agent execution | Fragile JSON.parse on LLM output | Use structured output |
 | H-P2-8 | Email Handler Has No Recipient Validation | NOT STARTED | Email tool | No email format or domain validation | Validate recipients |
@@ -603,16 +603,55 @@ Hardening is complete when:
 - **Impact:** Slow dashboard load under load; unnecessary DB pressure.
 - **Recommended fix:** Add Redis caching with TTL for dashboard stats and execution trend.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/services/cache.service.js` (new): Redis client wrapper with `getCached`, `setCached`, `ensureRedis`, and configurable `DASHBOARD_CACHE_TTL_MS` (default 30000 ms). Gracefully degrades when Redis is unavailable — failures are caught and do not break requests.
+  - `backend/src/controllers/dashboard.controller.js`: `getDashboardStats` and `getExecutionTrend` now check Redis cache before querying MongoDB. Cache keys are user-isolated (`dashboard:stats:<userId>`, `dashboard:execution-trend:<userId>:<tz>`). On cache miss, queries execute, results are returned, and `setCached` is fired as a non-blocking `.catch(() => {})`. Response shapes are unchanged.
+  - `backend/src/app.js`: Redis connection initialized at startup via `ensureRedis()` before routes mount.
+  - `infra/docker-compose.yml`: Added Redis service with healthcheck, named volume `redis_data`, and `REDIS_PORT` env override. MongoDB healthcheck strengthened.
+  - `infra/.env.example`: Added `REDIS_URL`, `DASHBOARD_CACHE_TTL_MS`, `REDIS_PORT`.
+- **Tests:** `backend/src/tests/dashboard.cache.handler.test.js` (10 tests):
+  1. `getDashboardStats` — first request is a cache miss (MongoDB path).
+  2. `getDashboardStats` — cached response returned on second request.
+  3. `getDashboardStats` — different users cannot receive each other cached data.
+  4. `getDashboardStats` — Redis GET failure falls back to MongoDB.
+  5. `getDashboardStats` — Redis SET failure does not break the request.
+  6. `getExecutionTrend` — different timezone parameters produce different cache keys.
+  7. `getExecutionTrend` — cached response returned on second request.
+  8. `getExecutionTrend` — malformed cached JSON falls back to MongoDB.
+  9. Response shape unchanged for `getDashboardStats`.
+  10. Response shape unchanged for `getExecutionTrend`.
+- **Verification:** 10/10 new tests pass. Full backend suite: 22 suites, 133/133 pass. Lint clean for all changed files. `git diff --check` clean.
+- **Operational notes:**
+  - Cache TTL defaults to 30 seconds; operators can tune via `DASHBOARD_CACHE_TTL_MS`.
+  - Redis is optional — the backend starts and serves traffic without Redis; dashboard requests simply bypass the cache.
+  - Cache keys include `userId` and timezone (for execution trend) to prevent cross-user and cross-context leakage.
 
 ### H-P2-5: Missing Database Indexes
 - **Category:** Performance
 - **Severity:** P2
 - **Component:** Database
-- **Files:** `backend/src/models/*.model.js`
-- **Evidence:** `Task` has indexes on `userId` and `status`, but not on `workflowId`, `startedAt`, or compound `{userId, status, createdAt}`. `Workflow` has `userId` index but not on `status` or `agentId`. `DocumentChunk` has no indexes on `documentId` or `userId`.
+- **Files:** `backend/src/models/task.model.js`, `backend/src/models/workflow.model.js`
+- **Evidence:** `Task` had indexes on `userId` and `status`, but not on `workflowId`, `startedAt`, or compound `{userId, status, createdAt}`. `Workflow` had `userId` index but not on `status` or `agentId`. `DocumentChunk` already had `documentId` and `userId` indexes plus a compound `{userId, documentId}` index — no changes needed.
 - **Impact:** Slow queries on list endpoints, insights, and RAG retrieval as data grows.
 - **Recommended fix:** Add indexes: `Task: {workflowId, startedAt}`, `Workflow: {userId, status}`, `DocumentChunk: {documentId, userId}`.
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/models/task.model.js`: Added `TaskSchema.index({ workflowId: 1 })`, `TaskSchema.index({ startedAt: 1 })`, and compound `TaskSchema.index({ userId: 1, status: 1, createdAt: -1 })`.
+  - `backend/src/models/workflow.model.js`: Added `WorkflowSchema.index({ status: 1 })`, `WorkflowSchema.index({ agentId: 1 })`, and compound `WorkflowSchema.index({ userId: 1, status: 1 })`.
+- **Tests:** `backend/src/tests/indexVerification.handler.test.js` (6 tests):
+  1. Task schema defines `workflowId` index.
+  2. Task schema defines `startedAt` index.
+  3. Task schema defines compound index on `userId + status + createdAt`.
+  4. Workflow schema defines `status` index.
+  5. Workflow schema defines `agentId` index.
+  6. Workflow schema defines compound index on `userId + status`.
+- **Verification:** 6/6 new tests pass. Full backend suite: 23 suites, 139/139 pass. Lint clean for all changed files. `git diff --check` clean.
+- **Operational notes:**
+  - Indexes are defined in Mongoose schemas and created automatically by MongoDB on application startup or when the collection is first accessed.
+  - Compound index on `Task.userId + status + createdAt` supports common list/query patterns filtering by user and status, sorted by creation date.
+  - Compound index on `Workflow.userId + status` supports dashboard and list queries filtering workflows by user and status.
 
 ### H-P2-6: No Request Correlation IDs
 - **Category:** Observability

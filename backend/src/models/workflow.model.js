@@ -33,4 +33,8 @@ const WorkflowSchema = new mongoose.Schema(
   { timestamps: true, minimize: false }
 );
 
+WorkflowSchema.index({ status: 1 });
+WorkflowSchema.index({ agentId: 1 });
+WorkflowSchema.index({ userId: 1, status: 1 });
+
 module.exports = mongoose.models.Workflow || mongoose.model('Workflow', WorkflowSchema);

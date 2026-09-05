@@ -4,10 +4,23 @@ const Workflow = require('../models/workflow.model');
 const Task = require('../models/task.model');
 const Agent = require('../models/agent.model');
 const Schedule = require('../models/schedule.model');
+const {
+  getCached,
+  setCached,
+  ensureRedis,
+  DASHBOARD_CACHE_TTL_MS,
+} = require('../services/cache.service');
 
 async function getDashboardStats(req, res) {
   try {
     const userId = req.user._id;
+    const cacheKey = `dashboard:stats:${String(userId)}`;
+
+    const cached = await getCached(cacheKey);
+    if (cached) {
+      return res.json({ ok: true, stats: cached });
+    }
+
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const [
@@ -22,7 +35,7 @@ async function getDashboardStats(req, res) {
       totalAgents,
       enabledSchedules,
       disabledSchedules,
-      activeWorkers
+      activeWorkers,
     ] = await Promise.all([
       Workflow.countDocuments({ userId }),
       Workflow.countDocuments({ userId, createdAt: { $gte: sevenDaysAgo } }),
@@ -35,11 +48,19 @@ async function getDashboardStats(req, res) {
       Agent.countDocuments({ userId }),
       Schedule.countDocuments({ userId, enabled: true }),
       Schedule.countDocuments({ userId, enabled: false }),
-      Agent.countDocuments({ userId, isActive: true, updatedAt: { $gte: new Date(Date.now() - 5 * 60000) } })
+      Agent.countDocuments({
+        userId,
+        isActive: true,
+        updatedAt: { $gte: new Date(Date.now() - 5 * 60000) },
+      }),
     ]);
 
-    const dbStatus = mongoose.connection.readyState === 1 ? 'operational' :
-                     mongoose.connection.readyState === 2 ? 'degraded' : 'offline';
+    const dbStatus =
+      mongoose.connection.readyState === 1
+        ? 'operational'
+        : mongoose.connection.readyState === 2
+          ? 'degraded'
+          : 'offline';
 
     let storageStatus = 'operational';
     try {
@@ -55,35 +76,36 @@ async function getDashboardStats(req, res) {
       queueStatus = 'offline';
     }
 
-    res.json({
-      ok: true,
-      stats: {
-        workflows: workflowCount,
-        workflowTrend: recentWorkflows,
-        tasks: {
-          total: taskCount,
-          completed: completedTasks,
-          failed: failedTasks,
-          running: runningTasks,
-          pending: pendingTasks
-        },
-        agents: {
-          total: totalAgents,
-          active: activeAgents
-        },
-        schedules: {
-          enabled: enabledSchedules,
-          disabled: disabledSchedules
-        },
-        health: {
-          api: 'operational',
-          database: dbStatus,
-          queue: queueStatus,
-          storage: storageStatus,
-          workers: activeWorkers > 0 ? 'operational' : 'offline'
-        }
-      }
-    });
+    const stats = {
+      workflows: workflowCount,
+      workflowTrend: recentWorkflows,
+      tasks: {
+        total: taskCount,
+        completed: completedTasks,
+        failed: failedTasks,
+        running: runningTasks,
+        pending: pendingTasks,
+      },
+      agents: {
+        total: totalAgents,
+        active: activeAgents,
+      },
+      schedules: {
+        enabled: enabledSchedules,
+        disabled: disabledSchedules,
+      },
+      health: {
+        api: 'operational',
+        database: dbStatus,
+        queue: queueStatus,
+        storage: storageStatus,
+        workers: activeWorkers > 0 ? 'operational' : 'offline',
+      },
+    };
+
+    setCached(cacheKey, stats, DASHBOARD_CACHE_TTL_MS).catch(() => {});
+
+    res.json({ ok: true, stats });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'server_error' });
   }
@@ -144,6 +166,12 @@ async function getExecutionTrend(req, res) {
   try {
     const userId = req.user._id;
     const tz = req.query.tz || 'UTC';
+    const cacheKey = `dashboard:execution-trend:${String(userId)}:${encodeURIComponent(tz)}`;
+
+    const cached = await getCached(cacheKey);
+    if (cached) {
+      return res.json({ ok: true, ...cached });
+    }
 
     const now = new Date();
     const localStartToday = getLocalStartOfDay(now, tz);
@@ -244,7 +272,10 @@ async function getExecutionTrend(req, res) {
       avgDurationMs: totalWithDuration > 0 ? Math.round(totalDuration / totalWithDuration) : 0,
     };
 
-    res.json({ ok: true, trend, summary });
+    const payload = { trend, summary };
+    setCached(cacheKey, payload, DASHBOARD_CACHE_TTL_MS).catch(() => {});
+
+    res.json({ ok: true, ...payload });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'server_error' });
   }

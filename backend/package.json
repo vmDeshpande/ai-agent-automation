@@ -42,7 +42,8 @@
     "puppeteer": "^24.31.0",
     "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "ioredis": "^5.6.0"
   },
   "devDependencies": {
     "jest": "^30.4.2",

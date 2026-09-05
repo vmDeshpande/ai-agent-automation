@@ -182,6 +182,10 @@ const TaskSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+TaskSchema.index({ workflowId: 1 });
+TaskSchema.index({ startedAt: 1 });
+TaskSchema.index({ userId: 1, status: 1, createdAt: -1 });
+
 TaskSchema.pre('save', function (next) {
   if (this.isModified('steps') || this.isModified('metadata') || !this.graphHash) {
     const steps = this.steps || this.metadata?.steps || [];
