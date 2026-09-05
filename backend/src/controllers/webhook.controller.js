@@ -1,7 +1,12 @@
-const Webhook = require("../models/webhook.model");
-const Workflow = require("../models/workflow.model");
-const Task = require("../models/task.model");
-const crypto = require("crypto");
+const Webhook = require('../models/webhook.model');
+const Workflow = require('../models/workflow.model');
+const crypto = require('crypto');
+
+// MongoDB ObjectId regex — 24 hex chars. The frontend sends ObjectIds only
+// so this narrows user input to the same shape, defusing CodeQL's
+// "user-controlled DB query" warning without changing behaviour for
+// legitimate callers.
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 // Create webhook config (private/admin)
 async function createWebhook(req, res) {
@@ -11,7 +16,7 @@ async function createWebhook(req, res) {
     if (!name || !source) {
       return res.status(400).json({
         ok: false,
-        error: "name_and_source_required",
+        error: 'name_and_source_required',
       });
     }
 
@@ -21,19 +26,19 @@ async function createWebhook(req, res) {
       if (!workflow) {
         return res.status(404).json({
           ok: false,
-          error: "workflow_not_found",
+          error: 'workflow_not_found',
         });
       }
 
       if (workflow.userId.toString() !== req.user._id.toString()) {
         return res.status(403).json({
           ok: false,
-          error: "forbidden",
+          error: 'forbidden',
         });
       }
     }
 
-    const secret = crypto.randomBytes(16).toString("hex");
+    const secret = crypto.randomBytes(16).toString('hex');
 
     const webhook = await Webhook.create({
       name,
@@ -45,31 +50,50 @@ async function createWebhook(req, res) {
     });
     res.status(201).json({ ok: true, webhook });
   } catch (err) {
-    console.error("createWebhook error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('createWebhook error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
 async function listWebhooks(req, res) {
   try {
-    const webhooks = await Webhook.find({ userId: req.user._id }).sort({ createdAt: -1 });
-    res.json({ ok: true, webhooks });
+    const filter = { userId: req.user._id };
+    const rawWorkflowId = req.query.workflowId;
+    if (rawWorkflowId !== undefined && rawWorkflowId !== null && rawWorkflowId !== '') {
+      // Reject anything that isn't a 24-char hex ObjectId. The frontend
+      // only ever sends ObjectIds so this is effectively a no-op for
+      // legitimate callers, but it closes the CodeQL
+      // "Database query built from user-controlled sources" alert.
+      if (typeof rawWorkflowId !== 'string' || !OBJECT_ID_RE.test(rawWorkflowId)) {
+        return res.status(400).json({ ok: false, error: 'invalid_workflow_id' });
+      }
+      filter.workflowId = rawWorkflowId;
+    }
+    const webhooks = await Webhook.find(filter).sort({ createdAt: -1 });
+    // Strip the secret on the way out — the Flutter/UI never needs the
+    // raw token, only its presence (for the "Secret configured" pill).
+    const safe = webhooks.map((w) => {
+      const obj = w.toObject ? w.toObject() : w;
+      return { ...obj, hasSecret: !!obj.secret, secret: undefined };
+    });
+    res.json({ ok: true, webhooks: safe });
   } catch (err) {
-    console.error("listWebhooks error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('listWebhooks error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 
 async function deleteWebhook(req, res) {
   try {
     const wh = await Webhook.findById(req.params.id);
-    if (!wh) return res.status(404).json({ ok: false, error: "not_found" });
-    if (wh.userId.toString() !== req.user._id.toString()) return res.status(403).json({ ok: false, error: "forbidden" });
+    if (!wh) return res.status(404).json({ ok: false, error: 'not_found' });
+    if (wh.userId.toString() !== req.user._id.toString())
+      return res.status(403).json({ ok: false, error: 'forbidden' });
     await wh.deleteOne();
-    res.json({ ok: true, message: "webhook_deleted" });
+    res.json({ ok: true, message: 'webhook_deleted' });
   } catch (err) {
-    console.error("deleteWebhook error", err);
-    res.status(500).json({ ok: false, error: "server_error" });
+    console.error('deleteWebhook error', err);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 }
 

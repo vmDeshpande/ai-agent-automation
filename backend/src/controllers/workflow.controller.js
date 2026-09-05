@@ -115,7 +115,16 @@ async function updateWorkflow(req, res) {
     if (workflow.userId.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'forbidden' });
 
-    const allowed = ['name', 'description', 'status', 'tasks', 'agentId', 'apiSettings'];
+    const allowed = [
+      'name',
+      'description',
+      'status',
+      'tasks',
+      'agentId',
+      'apiSettings',
+      'variables',
+      'trigger',
+    ];
 
     if (req.body.apiSettings !== undefined) {
       const { enabled, endpointName } = req.body.apiSettings;

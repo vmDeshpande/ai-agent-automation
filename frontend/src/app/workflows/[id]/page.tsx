@@ -46,6 +46,8 @@ import type {
   BackendStep as WorkflowStep,
   WorkflowAgent as Agent,
   NodeDefinition,
+  WorkflowOverviewResponse,
+  WorkflowOverviewVariable,
 } from '@/types/workflow';
 
 function getStatusDescription(status: string) {
@@ -191,6 +193,8 @@ export default function WorkflowDetailPage() {
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [nodeDefinitions, setNodeDefinitions] = useState<NodeDefinition[]>([]);
   const [apiSettingsOpen, setApiSettingsOpen] = useState<boolean>(false);
+  // Issue #283 — live workflow overview from /api/workflows/:id/overview
+  const [overview, setOverview] = useState<WorkflowOverviewResponse | null>(null);
   const { addToast } = useToast();
 
   function getStepStatus(stepId: string): 'pending' | 'completed' | 'failed' | 'paused' {
@@ -369,10 +373,19 @@ export default function WorkflowDetailPage() {
     });
   }
 
-  /** Load workflow + agents + node definitions */
+  /** Load workflow + agents + node definitions + overview */
   useEffect(() => {
     fetchWorkflow();
     fetchAgents();
+    // Issue #283 — parallel fetch of the aggregated overview
+    fetch(apiUrl(`/workflows/${id}/overview`), {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) setOverview(data);
+      })
+      .catch(console.error);
     // Fetch schema-driven node definitions
     fetch(apiUrl('/workflows/node-definitions'), {
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
@@ -514,13 +527,52 @@ export default function WorkflowDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard
             title="Success Rate"
-            value="-"
+            value={
+              overview?.metrics?.successRate != null ? `${overview.metrics.successRate}%` : '-'
+            }
             icon={Target}
-            trend={{ value: '-', isPositive: true }}
+            trend={
+              overview?.metrics?.successRate != null
+                ? {
+                    value: `${overview.metrics.completedRuns}/${overview.metrics.completedRuns + overview.metrics.failedRuns} runs`,
+                    isPositive: overview.metrics.successRate >= 90,
+                  }
+                : { value: '—', isPositive: true }
+            }
           />
-          <MetricCard title="Avg. Duration" value="-" icon={Clock} subtitle="seconds" />
-          <MetricCard title="Total Runs" value={tasks.length.toString()} icon={Activity} />
-          <MetricCard title="Est. Cost" value="-" icon={Coins} subtitle="tokens" />
+          <MetricCard
+            title="Avg. Duration"
+            value={
+              overview?.metrics?.avgDurationMs != null
+                ? overview.metrics.avgDurationMs < 1000
+                  ? `${overview.metrics.avgDurationMs}ms`
+                  : `${(overview.metrics.avgDurationMs / 1000).toFixed(1)}s`
+                : '-'
+            }
+            icon={Clock}
+            subtitle={overview?.metrics?.avgDurationMs != null ? 'avg' : undefined}
+          />
+          <MetricCard
+            title="Total Runs"
+            value={
+              overview?.metrics?.totalRuns != null
+                ? String(overview.metrics.totalRuns)
+                : tasks.length.toString()
+            }
+            icon={Activity}
+          />
+          <MetricCard
+            title="Est. Cost"
+            value={
+              overview?.tokenUsage && overview.tokenUsage.totalTokens > 0
+                ? `${(overview.tokenUsage.totalTokens / 1000).toFixed(0)}k`
+                : '-'
+            }
+            icon={Coins}
+            subtitle={
+              overview?.tokenUsage && overview.tokenUsage.totalTokens > 0 ? 'tokens' : undefined
+            }
+          />
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -607,30 +659,122 @@ export default function WorkflowDetailPage() {
                 </h3>
               </div>
               <div className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Webhook Endpoint</span>
+                {/* Primary trigger badge */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium">
+                    {overview?.triggers?.primary === 'schedule'
+                      ? 'Scheduled'
+                      : overview?.triggers?.primary === 'webhook'
+                        ? 'Webhook'
+                        : 'Manual'}
+                  </span>
                   <Badge
                     variant="outline"
                     className="text-[10px] font-mono tracking-widest bg-muted/20"
                   >
-                    POST
+                    {overview?.triggers?.primary?.toUpperCase() || 'MANUAL'}
                   </Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="bg-muted/30 border border-border/50 rounded-md p-2 flex-1 font-mono text-xs text-muted-foreground truncate">
-                    https://api.workbench.ai/v1/webhooks/workflow/{workflow._id}
+
+                {/* Schedule info */}
+                {overview?.triggers?.schedules && overview.triggers.schedules.length > 0 && (
+                  <div className="flex flex-col gap-3 mb-3">
+                    {overview.triggers.schedules.map((s) => (
+                      <div
+                        key={s._id}
+                        className="rounded-lg border border-border/50 p-3 bg-muted/10"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-mono font-semibold">{s.name}</span>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] ${s.enabled ? 'bg-success/10 text-success' : 'bg-muted/10 text-muted-foreground'}`}
+                          >
+                            {s.enabled ? 'ACTIVE' : 'PAUSED'}
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                          {s.cron} ({s.timezone})
+                        </div>
+                        {s.lastRunAt && (
+                          <div className="text-[10px] text-muted-foreground/60 mt-0.5">
+                            Last run: {new Date(s.lastRunAt).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <Button variant="outline" size="icon" className="h-8 w-8 shrink-0">
-                    <Copy className="size-3.5" />
-                  </Button>
-                </div>
+                )}
+
+                {/* Webhook info */}
+                {overview?.triggers?.webhooks && overview.triggers.webhooks.length > 0 && (
+                  <div className="mb-3">
+                    {overview.triggers.webhooks.map((w) => (
+                      <div key={w._id} className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Globe className="size-3 text-muted-foreground" />
+                          <span className="text-sm">{w.name}</span>
+                          {w.hasSecret && (
+                            <Badge variant="outline" className="text-[9px] bg-muted/20">
+                              SECRET
+                            </Badge>
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${w.active ? 'bg-success/10 text-success' : 'bg-muted/10 text-muted-foreground'}`}
+                        >
+                          {w.active ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Endpoint copy-row (reuse existing URL + copy button for any webhook trigger) */}
+                {overview?.triggers?.primary === 'webhook' && (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/30">
+                    <div className="bg-muted/30 border border-border/50 rounded-md p-2 flex-1 font-mono text-xs text-muted-foreground truncate">
+                      https://api.workbench.ai/v1/webhooks/workflow/{workflow._id}
+                    </div>
+                    {(() => {
+                      const wurl = `https://api.workbench.ai/v1/webhooks/workflow/${workflow._id}`;
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              onClick={() => {
+                                navigator.clipboard.writeText(wurl);
+                                addToast({
+                                  type: 'success',
+                                  title: 'Copied webhook URL',
+                                });
+                              }}
+                            >
+                              <Copy className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Copy Webhook URL</TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </Card>
           </div>
 
           <div className="flex flex-col gap-6">
-            <WorkflowMetadataCard creatorName={undefined} createdAt={undefined} />
-            <VariablesCard />
+            <WorkflowMetadataCard
+              creatorName={overview?.workflow?.creatorName || undefined}
+              createdAt={overview?.workflow?.createdAt || workflow.createdAt}
+              triggerType={overview?.triggers?.primary || 'Manual'}
+              environment={workflow.status === 'running' ? 'Active' : 'Idle'}
+            />
+            <VariablesCard variables={(overview?.variables || []) as WorkflowOverviewVariable[]} />
           </div>
         </div>
       </div>
