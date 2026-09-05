@@ -100,7 +100,7 @@ This plan prioritizes fixing exploitable vulnerabilities and data-integrity risk
 |---|---|---|---|---|---|
 | H-P2-1 | No Graceful Worker Shutdown | COMPLETED | Worker runtime | Graceful SIGTERM/SIGINT handling. Shutdown flag stops new claims; current task finishes with a hard cap. Idempotent handlers. | Verified: 11 new tests passing, 94/94 full suite |
 | H-P2-2 | Stale Task Recovery Missing | COMPLETED | Worker / Task system | Race-safe atomic per-task recovery. Requeues tasks with attempts < maxAttempts; marks exhausted tasks as failed. Opportunistic sweep inside claimNextTask. | Verified: 18 new tests passing, 112/112 full suite |
-| H-P2-3 | No Health Check Endpoint Validation | NOT STARTED | Backend | /health does not check dependencies | Add /ready endpoint |
+| H-P2-3 | No Health Check Endpoint Validation | COMPLETED | Backend | Added /ready dependency check (MongoDB). /health preserved as lightweight liveness. | Verified: 11 new tests passing, 123/123 full suite |
 | H-P2-4 | Dashboard Queries Hit MongoDB Directly | NOT STARTED | Backend API | 12 parallel countDocuments per request | Add caching layer |
 | H-P2-5 | Missing Database Indexes | NOT STARTED | Database | No indexes on workflowId, startedAt, etc. | Add indexes |
 | H-P2-6 | No Request Correlation IDs | NOT STARTED | Backend | No correlation ID propagation | Add correlation middleware |
@@ -560,11 +560,39 @@ Hardening is complete when:
 - **Category:** Reliability
 - **Severity:** P2
 - **Component:** Backend
-- **File:** `backend/src/app.js`
-- **Evidence:** `/health` only returns `{ ok: true, ts: Date.now() }`. Does not check database connectivity, worker status, or external dependencies.
-- **Impact:** Kubernetes/Docker health checks pass even when backend is non-functional.
-- **Recommended fix:** Add `/health` (liveness) and `/ready` (readiness) endpoints. Check DB connection, MongoDB replica set status, worker connectivity.
+- **File:** `backend/src/app.js`, `backend/src/controllers/health.controller.js`
+- **Evidence:** `/health` returns `{ ok: true, ts: Date.now() }` without checking MongoDB or any other dependency. Docker healthcheck reports healthy even when MongoDB is down.
+- **Impact:** Orchestrators (Docker, Kubernetes) cannot distinguish a running-but-broken backend from a fully-healthy one.
+- **Recommended fix:** Split into `/health` (liveness) and `/ready` (readiness with dependency checks).
 - **Confidence:** High
+- **Status:** ✅ COMPLETED
+- **Implementation:**
+  - `backend/src/controllers/health.controller.js` (new): two handlers.
+    - `getHealth(req, res)`: preserved exact legacy shape `{ ok: true, ts: Date.now() }`. Mounted at `/health`. No dependency checks — suitable as a lightweight liveness probe.
+    - `getReady(req, res)`: mounted at `/ready`. Checks `mongoose.connection.readyState`; if connected (1), performs a lightweight `db.admin().ping()` with a 3-second timeout via `Promise.race`. Returns 200 + `{ ok: true, status: 'ready', checks: { database: { status: 'healthy', readyState: 1 } }, timestamp }` when healthy, or 503 + `{ ok: false, status: 'not_ready', checks: { database: { status: 'unhealthy', readyState, message } }, timestamp }` when not.
+    - **Worker health is intentionally NOT included in `/ready`**: the current architecture has no worker registration or heartbeat mechanism. The worker is an optional background processor; the backend can serve API traffic without it. Local development often runs the backend without a worker. Adding a worker check here would cause false negatives. If a worker heartbeat is introduced in the future, `/ready` can be extended.
+    - **Replica-set validation is NOT performed**: the Docker deployment uses a single-node replica set (`rs0` with one member) for oplog support (document intelligence RAG). A standalone MongoDB would fail replica-set checks but is valid for local development. The readiness check only verifies that the DB is reachable and responding, not its topology.
+    - No credentials, connection strings, stack traces, or internal topology details are exposed in responses.
+  - `backend/src/app.js`: `/health` and `/ready` are mounted BEFORE the rate limiter and before other routes, so infrastructure probes are never rate-limited and are always accessible without authentication.
+  - Docker compose: **unchanged** — the existing backend `healthcheck` already uses `http://localhost:5000/health`, which is the correct liveness probe. A Kubernetes `readinessProbe` can be added separately pointing to `/ready` by operators; it is not hardcoded into compose to avoid changing the existing deployment contract.
+- **Tests:** `backend/src/tests/health.handler.test.js` (11 tests):
+  1. `/health` returns 200 with `{ ok: true, ts: ... }`.
+  2. `/health` does not depend on MongoDB state (disconnected).
+  3. `/health` response shape is stable (`ok` + `ts`).
+  4. `/ready` returns 200 when MongoDB is connected and pingable.
+  5. `/ready` returns 503 when MongoDB is disconnected.
+  6. `/ready` returns 503 when MongoDB is connecting.
+  7. `/ready` returns 503 when MongoDB ping fails.
+  8. `/ready` does not leak raw error messages or stack traces.
+  9. `/ready` does not hang indefinitely when ping times out (bounded by 3s timeout).
+  10. Worker is intentionally not part of readiness checks.
+  11. `/ready` includes timestamp for both ready and not_ready states.
+- **Verification:** 11/11 new tests pass. Full backend suite: 21 suites, 123/123 pass. Lint clean for all changed files. `git diff --check` clean (only the standard LF/CRLF informational warnings on the pre-existing mixed-EOL repo).
+- **Operational notes:**
+  - `/health` is suitable for Docker ` HEALTHCHECK` and Kubernetes `livenessProbe`.
+  - `/ready` is suitable for Kubernetes `readinessProbe` (returns 200 only when DB is reachable).
+  - The 3-second ping timeout prevents `/ready` from hanging if MongoDB is slow or partitioned.
+  - `HEALTH_CHECK_TIMEOUT_MS` is hardcoded to 3000 ms; it is not configurable via env because health checks should be fast and bounded by the caller's own timeout.
 
 ### H-P2-4: Dashboard Queries Hit MongoDB Directly
 - **Category:** Performance

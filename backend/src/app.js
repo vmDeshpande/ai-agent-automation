@@ -77,8 +77,12 @@ global.socketSync = global.socketSync || new EventEmitter();
 // apply rate limiting middleware to routes
 app.use('/webhook', webhookLimiter);
 
-// health
-app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+// health (liveness) — lightweight, no dependency checks
+const { getHealth, getReady } = require('./controllers/health.controller');
+app.get('/health', getHealth);
+
+// readiness — validates MongoDB connectivity
+app.get('/ready', getReady);
 
 // routes
 // Single API-wide baseline rate limiter. All /api/* routes inherit this.
