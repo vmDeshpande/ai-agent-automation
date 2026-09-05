@@ -335,6 +335,10 @@ export default function WorkflowBuilderPage() {
       },
     ]);
   }
+  const filteredSteps = steps.filter((step) => {
+  const query = stepSearch.trim().toLowerCase();
+
+  if (!query) return true;
 
   function enrichStepsWithEdges(steps: WorkflowStep[], edges: WorkflowEdge[]) {
     return steps.map((step) => {
